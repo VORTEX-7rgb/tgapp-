@@ -382,9 +382,11 @@ async function openPlayer(video) {
           highBufferWatchdogPeriod: 2
         });
 
-        // Prefer direct raw CDN URL for Hls.js (bypasses serverless proxy hops)
-        const streamSource = data.rawUrl || data.streamUrl;
-        hlsInstance.loadSource(streamSource);
+        // Load flattened edge-cached HLS stream from /api/live.m3u8
+        const fullStreamUrl = data.streamUrl 
+          ? (data.streamUrl.startsWith('http') ? data.streamUrl : `${API_BASE}${data.streamUrl}`)
+          : data.rawUrl;
+        hlsInstance.loadSource(fullStreamUrl);
         hlsInstance.attachMedia(nativePlayer);
         
         hlsInstance.on(Hls.Events.MANIFEST_PARSED, (event, manifestData) => {
@@ -408,13 +410,13 @@ async function openPlayer(video) {
           if (playPromise !== undefined) {
             playPromise.then(() => {
               // Playback successfully started
+              playerBuffering.classList.add('hidden');
             }).catch(e => {
-              console.log('Autoplay muted result:', e);
+              console.log('Autoplay requires user gesture:', e);
               playerStatusText.textContent = '▶ Tap to Play';
               playerBuffering.classList.remove('hidden');
               playerBuffering.classList.add('clickable');
               playerBuffering.onclick = () => {
-                nativePlayer.muted = false;
                 nativePlayer.play();
                 playerBuffering.classList.add('hidden');
               };

@@ -238,6 +238,12 @@ app.get('/api/chunk', (req, res) => {
       path: parsed.pathname + parsed.search,
       headers
     }, upstreamRes => {
+      // Guard against corrupted upstream 1-byte chunks: return 404 so player auto-skips to next segment
+      const len = upstreamRes.headers['content-length'];
+      if (upstreamRes.statusCode === 206 && len === '1') {
+        return res.status(404).send('Corrupted upstream chunk');
+      }
+
       res.status(upstreamRes.statusCode || 200);
       res.setHeader('Content-Type', 'video/mp2t');
       res.setHeader('Access-Control-Allow-Origin', '*');

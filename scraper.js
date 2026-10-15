@@ -207,7 +207,13 @@ function parseVideoList(html, requestedPage = 1) {
 // Dead & Unplayable Video Blacklist
 // ==========================================
 const deadUrlsSet = new Set([
-  'https://desi52.watch/village-tamil-hard-sex-married-naked-mms/'
+  'https://desi52.watch/village-tamil-hard-sex-married-naked-mms/',
+  'https://desi52.watch/neighbor-spies-sex-and-aunty-his-friends-viralsex-videos/',
+  'https://desi52.watch/hot-shy-bhabhi-fuck-secret-devar-sex/',
+  'https://desi52.watch/district-court-judge-aunty-neighbour-rc-video-virl-video-xx/',
+  'https://desi52.watch/sexy-indian-gf-hard-fucking-leaked-desi-cute-girls-videos/',
+  'https://desi52.watch/mature-aunty-affair-husbend-long-distance-neighbourxx-viral/',
+  'https://desi52.watch/horny-gf-pressing-boobs-and-sex-by-bf-leaked-desi-mms-porn/'
 ]);
 
 function markDeadVideo(url) {
@@ -231,7 +237,7 @@ function filterPlayableVideos(rawVideos, requestedPage = 1) {
 // ==========================================
 
 async function getBrowseVideos(page = 1, filter = 'latest') {
-  const cacheKey = `browse:v4:${filter}:${page}`;
+  const cacheKey = `browse:v5:${filter}:${page}`;
   const cached = getCached(cacheKey);
   if (cached) return cached;
 
