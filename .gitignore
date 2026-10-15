@@ -1,0 +1,7 @@
+node_modules/
+cache/
+.vercel/
+*.log
+embed_playmate.html
+.env
+.DS_Store

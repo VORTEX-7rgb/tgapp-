@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>StreamBox - Premium Player</title>
+  <link rel="stylesheet" href="style.css?v=2.4.0">
+  <!-- Telegram Web App SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <!-- HLS.js for direct video streaming -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <span class="logo-red">NET</span>FLIX<span class="badge-mini">MINI</span>
+      </div>
+      <div class="search-bar">
+        <input type="text" id="search-input" placeholder="Search videos...">
+        <button id="search-btn" title="Search">🔍</button>
+      </div>
+    </header>
+
+    <!-- In-Page Player Section (YouTube / Netflix Mobile Style - NOT a fullscreen blocker) -->
+    <section id="player-section" class="player-section hidden">
+      <div class="player-wrapper">
+        <video id="native-player" class="video-element" controls playsinline="true" webkit-playsinline="true" x5-playsinline="true" x5-video-player-type="h5-page" preload="metadata">
+          Your browser does not support HTML5 video.
+        </video>
+        <iframe id="embed-player" class="video-element hidden" frameborder="0" allowfullscreen allow="autoplay; fullscreen; encrypted-media"></iframe>
+        <div id="player-buffering" class="player-buffering hidden">
+          <div class="spinner"></div>
+          <p id="player-status-text">Connecting clean stream...</p>
+        </div>
+      </div>
+      <div class="player-bar">
+        <div class="player-bar-left">
+          <h3 id="player-video-title" class="player-title">Now Playing</h3>
+          <div class="player-badges">
+            <span class="badge-tag red">⚡ Direct CDN</span>
+            <span class="badge-tag green">0 Ads / 0 Popups</span>
+          </div>
+        </div>
+        <button id="close-player-btn" class="close-btn" title="Close Player">✕ Close Player</button>
+      </div>
+    </section>
+
+    <!-- Category Pills (Horizontal Scroll) -->
+    <nav class="categories-bar" id="categories-bar">
+      <!-- Injected via JavaScript -->
+    </nav>
+
+    <!-- Filter Bar (Latest, Popular, etc.) -->
+    <div class="filters-bar">
+      <button class="filter-btn active" data-filter="latest">Latest</button>
+      <button class="filter-btn" data-filter="most-viewed">Most Viewed</button>
+      <button class="filter-btn" data-filter="popular">Popular</button>
+      <button class="filter-btn" data-filter="longest">Longest</button>
+    </div>
+
+    <!-- Video Grid Section -->
+    <main class="content-container">
+      <div class="section-title-bar">
+        <h2 id="current-section-title">Latest Releases</h2>
+        <span id="video-count" class="video-counter"></span>
+      </div>
+
+      <div class="video-grid" id="video-grid">
+        <!-- Video cards injected via JavaScript -->
+      </div>
+
+      <!-- Numbered Pagination Bar (Matches desktop & mobile portal UI) -->
+      <nav class="pagination-bar hidden" id="pagination-bar" aria-label="Page navigation"></nav>
+
+      <div id="loader" class="loader-spinner hidden">
+        <div class="spinner"></div>
+        <p>Loading content...</p>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js?v=2.6.0"></script>
+</body>
+</html>
