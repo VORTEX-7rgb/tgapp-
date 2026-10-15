@@ -12,10 +12,13 @@ const {
   searchVideos,
   getDirectStream,
   markDeadVideo,
+  httpGet,
+  USER_AGENT,
   CATEGORIES
 } = require('./scraper');
 const {
   getVerifiedBrowse,
+  getVerifiedCategory,
   getLocalCatalog,
   auditAndPopulateCatalog
 } = require('./verifier');
@@ -83,10 +86,17 @@ app.get('/api/browse', async (req, res) => {
   res.json(result);
 });
 
-// 3. Category Videos
+// 3. Category Videos (Instant response from pre-verified catalog)
 app.get('/api/category/:slug', async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
   const slug = req.params.slug;
+
+  const verified = getVerifiedCategory(slug, page, 20);
+  if (verified && verified.videos.length > 0) {
+    res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=3600, stale-while-revalidate=86400');
+    return res.json(verified);
+  }
+
   const result = await getCategoryVideos(slug, page);
   res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
   res.json(result);
@@ -173,32 +183,29 @@ app.get('/api/live.m3u8', async (req, res) => {
     return res.send(cached.data);
   }
 
-  const fetchText = (targetUrl) => new Promise((resolve, reject) => {
+  const fetchText = async (targetUrl) => {
     try {
       const parsed = new URL(targetUrl);
-      https.get({
-        protocol: parsed.protocol,
-        hostname: parsed.hostname,
-        port: parsed.port || 443,
-        path: parsed.pathname + parsed.search,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Referer': 'https://playmate.to/',
-          'Origin': 'https://playmate.to'
-        }
-      }, clientRes => {
-        let data = '';
-        clientRes.on('data', chunk => { data += chunk; });
-        clientRes.on('end', () => resolve(data));
-      }).on('error', reject);
+      const isLulu = parsed.hostname.includes('tnmr.org') || parsed.hostname.includes('lulu');
+      const customRef = req.query.ref;
+      const referer = customRef || (isLulu ? 'https://luluvido.com/' : 'https://playmate.to/');
+      const origin = referer.replace(/\/$/, '');
+
+      return await httpGet(targetUrl, {
+        'Referer': referer,
+        'Origin': origin,
+        'Accept': '*/*'
+      }, 7000);
     } catch (e) {
-      reject(e);
+      console.error('[fetchText error]:', e.message);
+      return '';
     }
-  });
+  };
 
   try {
     const masterData = await fetchText(masterUrl);
     if (!masterData || !masterData.includes('#EXTM3U')) {
+      console.error('[live.m3u8] masterData invalid or empty, len:', (masterData || '').length);
       return res.status(502).send('Invalid playlist from upstream host');
     }
     
@@ -221,15 +228,30 @@ app.get('/api/live.m3u8', async (req, res) => {
       }
     }
 
-    // Rewrite all segment lines:
-    // For iOS: route via /api/chunk to inject valid Content-Type: video/mp2t (avoids AVPlayer crash)
-    // For PC/Android (Hls.js): direct CDN URLs for zero-latency streaming
+    const isLuluStream = basePlaylistUrl.includes('tnmr.org') || basePlaylistUrl.includes('lulu');
+    const customRef = req.query.ref;
+    const streamReferer = customRef || (isLuluStream ? 'https://luluvido.com/' : 'https://playmate.to/');
+
+    // Rewrite all segment lines and AES keys:
+    // For AES-128: route key through /api/key so it is fetched with matching UA & Referer
+    // For Lulu or iOS: route TS segments through /api/chunk to inject matching UA / Referer / video/mp2t MIME
+    // For Playmate on PC/Android: direct CDN URLs for zero server bandwidth
     const rewritten = finalPlaylist.split('\n').map(line => {
       const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith('#')) {
+      if (!trimmed) return line;
+
+      // Handle AES-128 key URI
+      if (trimmed.startsWith('#EXT-X-KEY')) {
+        return trimmed.replace(/URI=["']([^"']+)["']/, (match, uri) => {
+          const fullKeyUrl = new URL(uri, basePlaylistUrl).toString();
+          return `URI="/api/key?url=${encodeURIComponent(fullKeyUrl)}&ref=${encodeURIComponent(streamReferer)}"`;
+        });
+      }
+
+      if (!trimmed.startsWith('#')) {
         const fullSegUrl = new URL(trimmed, basePlaylistUrl).toString();
-        if (isIOS) {
-          return `/api/chunk?url=${encodeURIComponent(fullSegUrl)}`;
+        if (isIOS || isLuluStream) {
+          return `/api/chunk?url=${encodeURIComponent(fullSegUrl)}&ref=${encodeURIComponent(streamReferer)}`;
         }
         return fullSegUrl;
       }
@@ -248,17 +270,30 @@ app.get('/api/live.m3u8', async (req, res) => {
   }
 });
 
-// HLS Segment Proxy for Apple iOS Safari & Telegram WebApp (Fixes fake text/css MIME type)
+// HLS Segment Proxy for Apple iOS Safari & LuluStream (Fixes fake MIME & UA binding)
 app.get('/api/chunk', (req, res) => {
   const chunkUrl = req.query.url;
   if (!chunkUrl) return res.status(400).send('Missing url');
 
   try {
     const parsed = new URL(chunkUrl);
+    const isLulu = parsed.hostname.includes('tnmr.org') || parsed.hostname.includes('lulu');
+    const customRef = req.query.ref;
+    const referer = customRef || (isLulu ? 'https://luluvido.com/' : 'https://playmate.to/');
+    const origin = referer.replace(/\/$/, '');
+
     const headers = {
-      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-      'Referer': 'https://playmate.to/',
-      'Origin': 'https://playmate.to'
+      'User-Agent': USER_AGENT,
+      'Accept': '*/*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Sec-Ch-Ua': '"Chromium";v="120", "Not(A:Brand";v="24", "Google Chrome";v="120"',
+      'Sec-Ch-Ua-Mobile': '?0',
+      'Sec-Ch-Ua-Platform': '"Windows"',
+      'Sec-Fetch-Dest': 'empty',
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Site': 'cross-site',
+      'Referer': referer,
+      'Origin': origin
     };
     if (req.headers.range) {
       headers['Range'] = req.headers.range;
@@ -295,6 +330,51 @@ app.get('/api/chunk', (req, res) => {
     });
   } catch (err) {
     if (!res.headersSent) res.status(400).send('Invalid chunk URL');
+  }
+});
+
+// AES-128 Decryption Key Proxy (Ensures matching UA & Referer for HLS decryptor)
+app.get('/api/key', (req, res) => {
+  const keyUrl = req.query.url;
+  if (!keyUrl) return res.status(400).send('Missing url');
+
+  try {
+    const parsed = new URL(keyUrl);
+    const isLulu = parsed.hostname.includes('tnmr.org') || parsed.hostname.includes('lulu');
+    const customRef = req.query.ref;
+    const referer = customRef || (isLulu ? 'https://luluvido.com/' : 'https://playmate.to/');
+    const origin = referer.replace(/\/$/, '');
+
+    https.get({
+      protocol: parsed.protocol,
+      hostname: parsed.hostname,
+      port: parsed.port || 443,
+      path: parsed.pathname + parsed.search,
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Sec-Ch-Ua': '"Chromium";v="120", "Not(A:Brand";v="24", "Google Chrome";v="120"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'cross-site',
+        'Referer': referer,
+        'Origin': origin
+      }
+    }, upstreamRes => {
+      res.status(upstreamRes.statusCode || 200);
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      upstreamRes.pipe(res);
+    }).on('error', err => {
+      console.error('[Key Proxy Error]:', err.message);
+      if (!res.headersSent) res.status(502).send('Error proxying key');
+    });
+  } catch (err) {
+    if (!res.headersSent) res.status(400).send('Invalid key URL');
   }
 });
 

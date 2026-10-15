@@ -333,6 +333,17 @@ async function searchVideos(query, page = 1) {
   }
 }
 
+function toBase(c, a) {
+  if (a <= 36) return c.toString(a);
+  const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let res = '';
+  do {
+    res = chars[c % a] + res;
+    c = Math.floor(c / a);
+  } while (c > 0);
+  return res || '0';
+}
+
 function unpackDeanEdwards(html) {
   const match = html.match(/}\('([\s\S]*?)',\s*(\d+),\s*(\d+),\s*'([\s\S]*?)'\.split\('\|'\)/);
   if (!match) return null;
@@ -344,11 +355,37 @@ function unpackDeanEdwards(html) {
 
   while (c--) {
     if (k[c]) {
-      const regex = new RegExp('\\b' + c.toString(a) + '\\b', 'g');
+      const regex = new RegExp('\\b' + toBase(c, a) + '\\b', 'g');
       p = p.replace(regex, k[c]);
     }
   }
   return p;
+}
+
+async function resolveLuluEmbed(embedUrl) {
+  try {
+    const cleanUrl = embedUrl.replace('luluvdo.com', 'luluvido.com');
+    const host = new URL(cleanUrl).hostname;
+    const html = await httpGet(cleanUrl, {
+      'Referer': 'https://desi52.watch/'
+    }, 6000);
+
+    const unpacked = unpackDeanEdwards(html);
+    if (!unpacked) return null;
+
+    const m3u8Match = unpacked.match(/https?:\/\/[^\s"']+\.m3u8[^\s"']*/);
+    if (!m3u8Match) return null;
+
+    const posterMatch = unpacked.match(/image:\s*["']([^"']+)["']/i);
+
+    return {
+      sx: m3u8Match[0],
+      ix: posterMatch ? posterMatch[1] : null,
+      ref: `https://${host}/`
+    };
+  } catch (e) {
+    return null;
+  }
 }
 
 let lastPlaymateReq = 0;
@@ -381,16 +418,15 @@ async function fetchPlaymateWithThrottle(filecode, refererType = 'embed') {
 
 /**
  * Direct Stream Resolver (Bypasses Ads, Turnstiles & Popups)
- * ONLY allows pure high-speed direct HLS streams. Zero third-party embeds!
+ * ONLY allows pure high-speed direct HLS streams (Playmate & LuluStream).
  */
 async function getDirectStream(videoPageUrl) {
-  const cacheKey = `stream:v11:${videoPageUrl}`;
+  const cacheKey = `stream:v13:${videoPageUrl}`;
   const cached = getCached(cacheKey);
   if (cached && cached.type === 'hls') return cached;
 
   try {
     const html = await httpGet(videoPageUrl);
-
     const title = 'Now Playing';
 
     // Extract poster image
@@ -398,15 +434,59 @@ async function getDirectStream(videoPageUrl) {
                         html.match(/<link rel="image_src" href="([^"]+)"/i);
     const poster = posterMatch ? posterMatch[1] : '';
 
-    // Playmate.to (Direct HLS master stream extraction - Zero Ads, Zero Popups)
+    // Step 1: Detect primary iframe in player container
+    const iframeMatches = [...html.matchAll(/<iframe\b[^>]*src=["']([^"']+)["']/gi)].map(m => m[1]);
+    
+    // Check if primary iframe is Lulu
+    for (const ifr of iframeMatches) {
+      if (/(?:luluvdo|luluvido|lulust|lulustream|luluvid)\.com\/e\/([a-zA-Z0-9]+)/i.test(ifr)) {
+        const luluData = await resolveLuluEmbed(ifr);
+        if (luluData && luluData.sx) {
+          const streamResult = {
+            ok: true,
+            type: 'hls',
+            streamUrl: `/api/live.m3u8?url=${encodeURIComponent(luluData.sx)}&ref=${encodeURIComponent(luluData.ref || 'https://luluvido.com/')}`,
+            rawUrl: luluData.sx,
+            poster: luluData.ix || poster,
+            title
+          };
+          setCached(cacheKey, streamResult, 3600);
+          return streamResult;
+        }
+      }
+    }
+
+    // Check if primary iframe is Playmate
+    for (const ifr of iframeMatches) {
+      const pmMatch = ifr.match(/playmate\.to\/(?:embed|watch)\/([a-zA-Z0-9]+)/i);
+      if (pmMatch) {
+        const filecode = pmMatch[1];
+        let apiData = await fetchPlaymateWithThrottle(filecode, 'embed');
+        if (!apiData || !apiData.sx) {
+          await new Promise(r => setTimeout(r, 150));
+          apiData = await fetchPlaymateWithThrottle(filecode, 'watch');
+        }
+        if (apiData && apiData.sx) {
+          const streamResult = {
+            ok: true,
+            type: 'hls',
+            streamUrl: `/api/live.m3u8?url=${encodeURIComponent(apiData.sx)}`,
+            rawUrl: apiData.sx,
+            poster: apiData.ix || poster,
+            title
+          };
+          setCached(cacheKey, streamResult, 3600);
+          return streamResult;
+        }
+      }
+    }
+
+    // Step 2: Fallback - Scan entire page HTML for Playmate
     const pmMatches = [...html.matchAll(/playmate\.to\/(?:embed|watch)\/([a-zA-Z0-9]+)/gi)];
     const filecodes = [...new Set(pmMatches.map(m => m[1]))];
 
     for (const filecode of filecodes) {
-      // Step A: Attempt with embed referer
       let apiData = await fetchPlaymateWithThrottle(filecode, 'embed');
-
-      // Step B: If rate-limited or forbidden, retry immediately with watch referer
       if (!apiData || !apiData.sx) {
         await new Promise(r => setTimeout(r, 150));
         apiData = await fetchPlaymateWithThrottle(filecode, 'watch');
@@ -426,7 +506,24 @@ async function getDirectStream(videoPageUrl) {
       }
     }
 
-    // If no direct HLS stream can be extracted on this attempt, return clean retryable error (do NOT permanently blacklist on transient errors)
+    // Step 3: Fallback - Scan entire page HTML for Lulu links
+    const luluPageMatches = [...html.matchAll(/https?:\/\/[^\s"']*(?:luluvdo|luluvido|lulust|lulustream|luluvid)\.com\/e\/[a-zA-Z0-9]+/gi)];
+    for (const m of luluPageMatches) {
+      const luluData = await resolveLuluEmbed(m[0]);
+      if (luluData && luluData.sx) {
+        const streamResult = {
+          ok: true,
+          type: 'hls',
+          streamUrl: `/api/live.m3u8?url=${encodeURIComponent(luluData.sx)}&ref=${encodeURIComponent(luluData.ref || 'https://luluvido.com/')}`,
+          rawUrl: luluData.sx,
+          poster: luluData.ix || poster,
+          title
+        };
+        setCached(cacheKey, streamResult, 3600);
+        return streamResult;
+      }
+    }
+
     return {
       ok: false,
       error: 'Stream is connecting. Please tap retry.',
@@ -455,5 +552,6 @@ module.exports = {
   getDirectStream,
   markDeadVideo,
   httpGet,
+  USER_AGENT,
   CATEGORIES
 };
