@@ -314,28 +314,40 @@ async function openPlayer(video) {
     let data = null;
     let lastError = null;
 
-    // Resilient stream resolution: up to 3 automatic attempts
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        playerStatusText.textContent = attempt === 1 
-          ? 'Connecting to secure stream...' 
-          : `Connecting to stream (attempt ${attempt}/3)...`;
-        
-        const res = await fetch(`${API_BASE}/api/stream-info?url=${encodeURIComponent(video.url)}`);
-        const json = await res.json();
-        
-        if (json.ok && (json.type === 'hls' || json.type === 'embed') && (json.rawUrl || json.streamUrl || json.embedUrl)) {
-          data = json;
-          break;
-        } else {
-          lastError = json.error || 'Stream not ready';
+    // Instant Fast-Path: If pre-verified stream is already attached to video card, start playing immediately (0ms delay)
+    if (video.streamUrl && video.rawUrl) {
+      data = {
+        ok: true,
+        type: 'hls',
+        streamUrl: video.streamUrl,
+        rawUrl: video.rawUrl,
+        poster: video.poster || video.thumb,
+        title: video.title
+      };
+    } else {
+      // Resilient stream resolution: up to 3 automatic attempts
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          playerStatusText.textContent = attempt === 1 
+            ? 'Connecting to secure stream...' 
+            : `Connecting to stream (attempt ${attempt}/3)...`;
+          
+          const res = await fetch(`${API_BASE}/api/stream-info?url=${encodeURIComponent(video.url)}`);
+          const json = await res.json();
+          
+          if (json.ok && (json.type === 'hls' || json.type === 'embed') && (json.rawUrl || json.streamUrl || json.embedUrl)) {
+            data = json;
+            break;
+          } else {
+            lastError = json.error || 'Stream not ready';
+          }
+        } catch (e) {
+          lastError = e.message;
         }
-      } catch (e) {
-        lastError = e.message;
-      }
 
-      if (attempt < 3) {
-        await new Promise(r => setTimeout(r, 800));
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, 600));
+        }
       }
     }
 

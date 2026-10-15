@@ -14,6 +14,11 @@ const {
   markDeadVideo,
   CATEGORIES
 } = require('./scraper');
+const {
+  getVerifiedBrowse,
+  getLocalCatalog,
+  auditAndPopulateCatalog
+} = require('./verifier');
 
 const app = express();
 
@@ -63,9 +68,15 @@ app.get('/api/categories', (req, res) => {
   res.json({ ok: true, categories: CATEGORIES });
 });
 
-// 2. Browse Videos
+// 2. Browse Videos (Serves 100% pre-verified, zero-broken videos instantly)
 app.get('/api/browse', async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
+  const verified = getVerifiedBrowse(page, 20);
+  if (verified && verified.videos.length > 0) {
+    res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=3600, stale-while-revalidate=86400');
+    return res.json(verified);
+  }
+
   const filter = req.query.filter || 'latest';
   const result = await getBrowseVideos(page, filter);
   res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
@@ -93,17 +104,39 @@ app.get('/api/search', async (req, res) => {
   res.json(result);
 });
 
-// 5. Get Direct Stream URL (Bypasses all popups, ads, and Turnstile)
+// 5. Get Direct Stream URL (Instant response from pre-verified catalog)
 app.get('/api/stream-info', async (req, res) => {
   const videoUrl = req.query.url;
   if (!videoUrl) {
     return res.status(400).json({ ok: false, error: 'Missing video url' });
   }
+
+  // Fast-path: Look up pre-verified stream (0ms response)
+  const catalog = getLocalCatalog();
+  const cachedVideo = catalog.find(v => v.url === videoUrl);
+  if (cachedVideo && cachedVideo.rawUrl && cachedVideo.streamUrl) {
+    res.setHeader('Cache-Control', 'public, max-age=600, s-maxage=86400, stale-while-revalidate=86400');
+    return res.json({
+      ok: true,
+      type: 'hls',
+      streamUrl: cachedVideo.streamUrl,
+      rawUrl: cachedVideo.rawUrl,
+      poster: cachedVideo.poster || cachedVideo.thumb,
+      title: cachedVideo.title
+    });
+  }
+
   const result = await getDirectStream(videoUrl);
   if (result.ok) {
     res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400');
   }
   res.json(result);
+});
+
+// 6. Trigger Background Catalog Audit
+app.get('/api/sync-catalog', (req, res) => {
+  res.json({ ok: true, message: 'Auditor scanning and verifying new videos in background' });
+  auditAndPopulateCatalog(3, 40).catch(err => console.error('[Auditor Error]:', err.message));
 });
 
 // Report and blacklist dead/unplayable videos so they are removed from future listings
