@@ -210,21 +210,24 @@ app.get('/api/live.m3u8', async (req, res) => {
     }
     
     // Check if master playlist points to a subplaylist (e.g. index_avc_1280p.txt)
-    const lines = masterData.split('\n');
-    const subLine = lines.find(line => {
-      const trimmed = line.trim();
-      return trimmed && !trimmed.startsWith('#');
-    });
-
+    // Only search for subplaylists if the playlist does NOT already contain media segments
     let finalPlaylist = masterData;
     let basePlaylistUrl = masterUrl;
 
-    if (subLine) {
-      const subUrl = new URL(subLine.trim(), masterUrl).toString();
-      basePlaylistUrl = subUrl;
-      const subData = await fetchText(subUrl);
-      if (subData.includes('#EXTINF')) {
-        finalPlaylist = subData;
+    if (!masterData.includes('#EXTINF')) {
+      const lines = masterData.split('\n');
+      const subLine = lines.find(line => {
+        const trimmed = line.trim();
+        return trimmed && !trimmed.startsWith('#') && (trimmed.includes('.m3u8') || trimmed.includes('.txt'));
+      });
+
+      if (subLine) {
+        const subUrl = new URL(subLine.trim(), masterUrl).toString();
+        const subData = await fetchText(subUrl);
+        if (subData.includes('#EXTINF')) {
+          finalPlaylist = subData;
+          basePlaylistUrl = subUrl;
+        }
       }
     }
 
@@ -250,10 +253,7 @@ app.get('/api/live.m3u8', async (req, res) => {
 
       if (!trimmed.startsWith('#')) {
         const fullSegUrl = new URL(trimmed, basePlaylistUrl).toString();
-        if (isIOS || isLuluStream) {
-          return `/api/chunk?url=${encodeURIComponent(fullSegUrl)}&ref=${encodeURIComponent(streamReferer)}`;
-        }
-        return fullSegUrl;
+        return `/api/chunk?url=${encodeURIComponent(fullSegUrl)}&ref=${encodeURIComponent(streamReferer)}`;
       }
       return line;
     }).join('\n');
@@ -299,10 +299,11 @@ app.get('/api/chunk', (req, res) => {
       headers['Range'] = req.headers.range;
     }
 
-    https.get({
+    const client = parsed.protocol === 'http:' ? http : https;
+    client.get({
       protocol: parsed.protocol,
       hostname: parsed.hostname,
-      port: parsed.port || 443,
+      port: parsed.port || (parsed.protocol === 'http:' ? 80 : 443),
       path: parsed.pathname + parsed.search,
       headers
     }, upstreamRes => {
@@ -345,10 +346,11 @@ app.get('/api/key', (req, res) => {
     const referer = customRef || (isLulu ? 'https://luluvido.com/' : 'https://playmate.to/');
     const origin = referer.replace(/\/$/, '');
 
-    https.get({
+    const keyClient = parsed.protocol === 'http:' ? http : https;
+    keyClient.get({
       protocol: parsed.protocol,
       hostname: parsed.hostname,
-      port: parsed.port || 443,
+      port: parsed.port || (parsed.protocol === 'http:' ? 80 : 443),
       path: parsed.pathname + parsed.search,
       headers: {
         'User-Agent': USER_AGENT,

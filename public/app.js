@@ -384,14 +384,18 @@ async function openPlayer(video) {
       if (Hls.isSupported()) {
         hlsInstance = new Hls({
           enableWorker: true,
+          progressive: true,               // Progressive chunk demuxing: play as bytes arrive
           lowLatencyMode: false,
-          maxBufferLength: 30,             // 30s forward buffer prevents socket starvation on mobile
-          maxMaxBufferLength: 60,          // Max 60s buffer
-          maxBufferSize: 60 * 1024 * 1024, // 60 MB buffer
+          maxBufferLength: 15,             // 15s forward buffer for fast start
+          maxMaxBufferLength: 30,          // Max 30s buffer
+          maxBufferSize: 30 * 1024 * 1024, // 30 MB buffer
           startFragPrefetch: true,         // Prefetch next chunk immediately
-          backBufferLength: 30,            // 30s back buffer for smooth rewinding
-          maxBufferHole: 0.5,              // Smooth jump over minor stream gaps
-          highBufferWatchdogPeriod: 2
+          backBufferLength: 10,            // 10s back buffer
+          maxBufferHole: 0.8,              // Tolerant to minor TS packet timestamp gaps
+          highBufferWatchdogPeriod: 3,
+          nudgeMaxRetry: 5,
+          fragLoadingMaxRetry: 6,
+          fragLoadingRetryDelay: 500
         });
 
         // Load flattened edge-cached HLS stream from /api/live.m3u8
@@ -400,10 +404,20 @@ async function openPlayer(video) {
           : data.rawUrl;
         hlsInstance.loadSource(fullStreamUrl);
         hlsInstance.attachMedia(nativePlayer);
+
+        let firstFragBuffered = false;
+        hlsInstance.on(Hls.Events.FRAG_BUFFERED, () => {
+          if (!firstFragBuffered) {
+            firstFragBuffered = true;
+            playerBuffering.classList.add('hidden');
+            const playPromise = nativePlayer.play();
+            if (playPromise !== undefined) {
+              playPromise.catch(() => {});
+            }
+          }
+        });
         
         hlsInstance.on(Hls.Events.MANIFEST_PARSED, (event, manifestData) => {
-          playerBuffering.classList.add('hidden');
-
           // Bitrate & Resolution Clamping: Cap to 720p to prevent mobile buffer starvation from France origin
           if (manifestData && manifestData.levels && manifestData.levels.length > 1) {
             let maxLevelIdx = -1;
@@ -446,15 +460,11 @@ async function openPlayer(video) {
         hlsInstance.on(Hls.Events.ERROR, (event, errData) => {
           console.warn('[HLS Error]:', errData.details, errData.type);
           
-          // Auto-recovery for buffer stalls: immediately nudge playback and step down bitrate
+          // Auto-recovery for buffer stalls: gently step down bitrate without destructive seeking
           if (errData.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR || 
               errData.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL) {
-            console.log('[HLS] Nudging video over buffer stall and scaling bitrate down...');
             if (hlsInstance.currentLevel > 0) {
               hlsInstance.nextLevel = Math.max(0, hlsInstance.currentLevel - 1);
-            }
-            if (nativePlayer && !nativePlayer.paused && nativePlayer.duration > 0) {
-              nativePlayer.currentTime += 0.2;
             }
             return;
           }
@@ -498,7 +508,10 @@ async function openPlayer(video) {
       } else if (nativePlayer.canPlayType('application/vnd.apple.mpegurl')) {
         // Native Apple iOS Safari / Telegram WebView HLS Support
         // Explicitly load the iOS-compatible playlist with corrected video/mp2t MIME types
-        const iosStreamUrl = `${API_BASE}/api/live.m3u8?url=${encodeURIComponent(data.rawUrl || data.streamUrl)}&ios=1`;
+        let iosStreamUrl = data.streamUrl || `/api/live.m3u8?url=${encodeURIComponent(data.rawUrl)}`;
+        if (!iosStreamUrl.startsWith('http')) iosStreamUrl = `${API_BASE}${iosStreamUrl}`;
+        if (!iosStreamUrl.includes('ios=1')) iosStreamUrl += (iosStreamUrl.includes('?') ? '&' : '?') + 'ios=1';
+        
         nativePlayer.src = iosStreamUrl;
         nativePlayer.addEventListener('loadedmetadata', () => {
           playerBuffering.classList.add('hidden');
