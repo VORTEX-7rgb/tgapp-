@@ -373,11 +373,13 @@ async function openPlayer(video) {
         hlsInstance = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-          maxBufferLength: 20,           // Lean 20s forward buffer prevents socket starvation on mobile
-          maxMaxBufferLength: 40,        // Max 40s buffer
-          maxBufferSize: 30 * 1024 * 1024, // 30 MB lean memory usage
-          startFragPrefetch: true,       // Clean single-chunk prefetch
-          backBufferLength: 30           // 30s back buffer for smooth rewinding
+          maxBufferLength: 30,             // 30s forward buffer prevents socket starvation on mobile
+          maxMaxBufferLength: 60,          // Max 60s buffer
+          maxBufferSize: 60 * 1024 * 1024, // 60 MB buffer
+          startFragPrefetch: true,         // Prefetch next chunk immediately
+          backBufferLength: 30,            // 30s back buffer for smooth rewinding
+          maxBufferHole: 0.5,              // Smooth jump over minor stream gaps
+          highBufferWatchdogPeriod: 2
         });
 
         // Prefer direct raw CDN URL for Hls.js (bypasses serverless proxy hops)
@@ -389,11 +391,11 @@ async function openPlayer(video) {
           playerBuffering.classList.add('hidden');
 
           // Bitrate & Resolution Clamping: Cap to 720p to prevent mobile buffer starvation from France origin
-          if (manifestData && manifestData.levels && manifestData.levels.length > 0) {
+          if (manifestData && manifestData.levels && manifestData.levels.length > 1) {
             let maxLevelIdx = -1;
             for (let i = 0; i < manifestData.levels.length; i++) {
               const lvl = manifestData.levels[i];
-              if (lvl.height <= 720 || lvl.bitrate <= 2500000) {
+              if ((lvl.height && lvl.height <= 720) || (lvl.bitrate && lvl.bitrate <= 2500000)) {
                 maxLevelIdx = i;
               }
             }
@@ -480,8 +482,10 @@ async function openPlayer(video) {
           }
         });
       } else if (nativePlayer.canPlayType('application/vnd.apple.mpegurl')) {
-        // Native Apple iOS Safari / Telegram WebView HLS Support (Always prefer server proxy for valid MIME type)
-        nativePlayer.src = data.streamUrl || data.rawUrl;
+        // Native Apple iOS Safari / Telegram WebView HLS Support
+        // Explicitly load the iOS-compatible playlist with corrected video/mp2t MIME types
+        const iosStreamUrl = `${API_BASE}/api/live.m3u8?url=${encodeURIComponent(data.rawUrl || data.streamUrl)}&ios=1`;
+        nativePlayer.src = iosStreamUrl;
         nativePlayer.addEventListener('loadedmetadata', () => {
           playerBuffering.classList.add('hidden');
           nativePlayer.play().catch(e => {

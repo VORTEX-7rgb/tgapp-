@@ -191,5 +191,6 @@ function stopPolling() {
 
 module.exports = {
   startPolling,
-  stopPolling
+  stopPolling,
+  handleUpdate
 };

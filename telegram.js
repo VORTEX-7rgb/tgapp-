@@ -47,9 +47,19 @@ async function getUpdates(offset = 0, timeout = 30) {
   });
 }
 
+async function setWebhook(url) {
+  return apiCall('setWebhook', { url });
+}
+
+async function deleteWebhook() {
+  return apiCall('deleteWebhook', {});
+}
+
 module.exports = {
   apiCall,
   copyMessage,
   sendMessage,
-  getUpdates
+  getUpdates,
+  setWebhook,
+  deleteWebhook
 };

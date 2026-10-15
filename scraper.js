@@ -400,9 +400,9 @@ async function getDirectStream(videoPageUrl) {
       // Step A: Attempt with embed referer
       let apiData = await fetchPlaymateWithThrottle(filecode, 'embed');
 
-      // Step B: If rate-limited or forbidden, wait 800ms and retry
+      // Step B: If rate-limited or forbidden, retry immediately with watch referer
       if (!apiData || !apiData.sx) {
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 150));
         apiData = await fetchPlaymateWithThrottle(filecode, 'watch');
       }
 

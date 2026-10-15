@@ -2,12 +2,24 @@ const fs = require('fs');
 const path = require('path');
 const { BOT_TOKEN } = require('./config');
 
-const DB_PATH = path.join(__dirname, 'data', 'videos.json');
+const DB_PATH = process.env.VERCEL 
+  ? path.join('/tmp', 'videos.json') 
+  : path.join(__dirname, 'data', 'videos.json');
 
 function getAllVideos() {
   try {
+    if (process.env.VERCEL && !fs.existsSync(DB_PATH)) {
+      const seedPath = path.join(__dirname, 'data', 'videos.json');
+      if (fs.existsSync(seedPath)) {
+        try {
+          fs.writeFileSync(DB_PATH, fs.readFileSync(seedPath, 'utf8'));
+        } catch (e) {}
+      }
+    }
     if (!fs.existsSync(DB_PATH)) {
-      fs.writeFileSync(DB_PATH, '[]', 'utf8');
+      try {
+        fs.writeFileSync(DB_PATH, '[]', 'utf8');
+      } catch (e) {}
       return [];
     }
     const data = fs.readFileSync(DB_PATH, 'utf8');

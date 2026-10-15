@@ -2,9 +2,10 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
-const { PORT, CHANNEL_ID, BOT_TOKEN } = require('./config');
+const { PORT, CHANNEL_ID, BOT_TOKEN, WEB_APP_URL } = require('./config');
 const { getAllVideos, addVideo, getVideoByMessageId, getFilePath } = require('./videos');
-const { startPolling } = require('./bot');
+const { startPolling, handleUpdate } = require('./bot');
+const { setWebhook, deleteWebhook } = require('./telegram');
 const {
   getBrowseVideos,
   getCategoryVideos,
@@ -58,7 +59,7 @@ if (!fs.existsSync(CACHE_DIR)) {
 
 // 1. Get Categories
 app.get('/api/categories', (req, res) => {
-  res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
+  res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400');
   res.json({ ok: true, categories: CATEGORIES });
 });
 
@@ -67,7 +68,7 @@ app.get('/api/browse', async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
   const filter = req.query.filter || 'latest';
   const result = await getBrowseVideos(page, filter);
-  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
   res.json(result);
 });
 
@@ -76,7 +77,7 @@ app.get('/api/category/:slug', async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
   const slug = req.params.slug;
   const result = await getCategoryVideos(slug, page);
-  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
   res.json(result);
 });
 
@@ -88,7 +89,7 @@ app.get('/api/search', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Empty search query' });
   }
   const result = await searchVideos(query, page);
-  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300');
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
   res.json(result);
 });
 
@@ -100,7 +101,7 @@ app.get('/api/stream-info', async (req, res) => {
   }
   const result = await getDirectStream(videoUrl);
   if (result.ok) {
-    res.setHeader('Cache-Control', 'public, max-age=1800, s-maxage=3600');
+    res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400');
   }
   res.json(result);
 });
@@ -128,11 +129,14 @@ app.get('/api/live.m3u8', async (req, res) => {
   const masterUrl = req.query.url;
   if (!masterUrl) return res.status(400).send('Missing url');
 
-  const cached = livePlaylistCache.get(masterUrl);
+  const isIOS = req.query.ios === '1' || /iPhone|iPad|iPod/i.test(req.headers['user-agent'] || '');
+  const cacheKey = `${masterUrl}:${isIOS ? 'ios' : 'direct'}`;
+
+  const cached = livePlaylistCache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) {
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400');
     return res.send(cached.data);
   }
 
@@ -145,7 +149,9 @@ app.get('/api/live.m3u8', async (req, res) => {
         port: parsed.port || 443,
         path: parsed.pathname + parsed.search,
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Referer': 'https://playmate.to/',
+          'Origin': 'https://playmate.to'
         }
       }, clientRes => {
         let data = '';
@@ -182,20 +188,26 @@ app.get('/api/live.m3u8', async (req, res) => {
       }
     }
 
-    // Rewrite all segment lines to clean absolute CDN URLs
+    // Rewrite all segment lines:
+    // For iOS: route via /api/chunk to inject valid Content-Type: video/mp2t (avoids AVPlayer crash)
+    // For PC/Android (Hls.js): direct CDN URLs for zero-latency streaming
     const rewritten = finalPlaylist.split('\n').map(line => {
       const trimmed = line.trim();
       if (trimmed && !trimmed.startsWith('#')) {
-        return new URL(trimmed, basePlaylistUrl).toString();
+        const fullSegUrl = new URL(trimmed, basePlaylistUrl).toString();
+        if (isIOS) {
+          return `/api/chunk?url=${encodeURIComponent(fullSegUrl)}`;
+        }
+        return fullSegUrl;
       }
       return line;
     }).join('\n');
 
-    setLivePlaylistCache(masterUrl, rewritten, 3600000);
+    setLivePlaylistCache(cacheKey, rewritten, 3600000);
 
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400');
     res.send(rewritten);
   } catch (err) {
     console.error('[Playlist Error]:', err.message);
@@ -203,7 +215,51 @@ app.get('/api/live.m3u8', async (req, res) => {
   }
 });
 
-// 6. Thumbnail Proxy (Bypasses ISP image blocking & hotlink protection)
+// HLS Segment Proxy for Apple iOS Safari & Telegram WebApp (Fixes fake text/css MIME type)
+app.get('/api/chunk', (req, res) => {
+  const chunkUrl = req.query.url;
+  if (!chunkUrl) return res.status(400).send('Missing url');
+
+  try {
+    const parsed = new URL(chunkUrl);
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+      'Referer': 'https://playmate.to/',
+      'Origin': 'https://playmate.to'
+    };
+    if (req.headers.range) {
+      headers['Range'] = req.headers.range;
+    }
+
+    https.get({
+      protocol: parsed.protocol,
+      hostname: parsed.hostname,
+      port: parsed.port || 443,
+      path: parsed.pathname + parsed.search,
+      headers
+    }, upstreamRes => {
+      res.status(upstreamRes.statusCode || 200);
+      res.setHeader('Content-Type', 'video/mp2t');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
+      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800, immutable');
+      if (upstreamRes.headers['content-range']) {
+        res.setHeader('Content-Range', upstreamRes.headers['content-range']);
+      }
+      if (upstreamRes.headers['content-length']) {
+        res.setHeader('Content-Length', upstreamRes.headers['content-length']);
+      }
+      upstreamRes.pipe(res);
+    }).on('error', err => {
+      console.error('[Chunk Proxy Error]:', err.message);
+      if (!res.headersSent) res.status(502).send('Error proxying chunk');
+    });
+  } catch (err) {
+    if (!res.headersSent) res.status(400).send('Invalid chunk URL');
+  }
+});
+
+// 6. Thumbnail Proxy (Bypasses ISP image blocking & hotlink protection with 7-day Edge Cache)
 app.get('/api/thumb', (req, res) => {
   const thumbUrl = req.query.url;
   if (!thumbUrl) return res.status(400).send('Missing url');
@@ -221,7 +277,7 @@ app.get('/api/thumb', (req, res) => {
       }
     }, imgRes => {
       res.setHeader('Content-Type', imgRes.headers['content-type'] || 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800, immutable');
       imgRes.pipe(res);
     }).on('error', err => {
       res.status(502).send('Error fetching thumbnail');
@@ -229,6 +285,25 @@ app.get('/api/thumb', (req, res) => {
   } catch (err) {
     res.status(400).send('Invalid thumbnail URL');
   }
+});
+
+// Telegram Bot Webhook Integration (Allows Bot to run on Vercel Serverless)
+app.post('/api/telegram-webhook', async (req, res) => {
+  try {
+    const update = req.body;
+    if (update && update.update_id) {
+      await handleUpdate(update);
+    }
+  } catch (err) {
+    console.error('[Telegram Webhook Error]:', err.message);
+  }
+  res.json({ ok: true });
+});
+
+app.get('/api/set-webhook', async (req, res) => {
+  const webhookUrl = `${WEB_APP_URL}/api/telegram-webhook`;
+  const result = await setWebhook(webhookUrl);
+  res.json({ ok: true, webhookUrl, result });
 });
 
 // ==========================================
