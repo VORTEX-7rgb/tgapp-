@@ -5,3 +5,7 @@ cache/
 embed_playmate.html
 .env
 .DS_Store
+__pycache__/
+*.pyc
+*.db
+
