@@ -1,7 +1,8 @@
 const https = require('https');
 const http = require('http');
 
-const BASE_URL = 'https://prompt-radius-hook-var.trycloudflare.com';
+const BASE_URL = 'https://advocacy-kills-app-dont.trycloudflare.com';
+
 
 function fetchUrl(url, options = {}) {
   return new Promise((resolve, reject) => {
