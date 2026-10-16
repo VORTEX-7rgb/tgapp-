@@ -660,7 +660,18 @@ class StreamXHandler(BaseHTTPRequestHandler):
                 req_headers["Range"] = client_range
 
             try:
-                upstream = cdn_session.get(cdn_url, headers=req_headers, stream=True, timeout=15)
+                upstream = cdn_session.get(cdn_url, headers=req_headers, stream=True, timeout=12)
+                # Auto-heal on origin contention (503) or expired link (403, 404)
+                if upstream.status_code in [403, 404, 503]:
+                    time.sleep(0.15)
+                    if post_id and upstream.status_code in [403, 404]:
+                        try:
+                            fresh = resolve_video_stream(post_id)
+                            if fresh and fresh.get("rawCdnUrl"):
+                                cdn_url = fresh["rawCdnUrl"]
+                        except Exception: pass
+                    upstream = cdn_session.get(cdn_url, headers=req_headers, stream=True, timeout=12)
+
                 self.send_response(upstream.status_code)
                 self.send_header("Content-Type", upstream.headers.get("Content-Type", "video/mp4"))
                 self.send_header("Accept-Ranges", "bytes")

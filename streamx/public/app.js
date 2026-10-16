@@ -129,6 +129,15 @@ videoElement.addEventListener('waiting', () => {
   playerStatusText.textContent = 'Buffering stream...';
 });
 
+videoElement.addEventListener('seeking', () => {
+  playerLoader.classList.remove('hidden');
+  playerStatusText.textContent = 'Seeking...';
+});
+
+videoElement.addEventListener('seeked', () => {
+  playerLoader.classList.add('hidden');
+});
+
 videoElement.addEventListener('playing', () => {
   playerLoader.classList.add('hidden');
 });
