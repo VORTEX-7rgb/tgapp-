@@ -240,15 +240,23 @@ def background_prewarm(video_ids):
 # 5. CATALOG FEED PARSING
 # ==========================================
 def fetch_feed(cat="trending", page=1):
-    cache_key = f"{cat}_{page}"
+    try:
+        p_num = max(1, int(page))
+    except Exception:
+        p_num = 1
+
+    cache_key = f"{cat}_{p_num}"
     now = time.time()
     if cache_key in feed_cache and (now - feed_cache[cache_key][0]) < 300:
         return feed_cache[cache_key][1]
 
+    # SxyPrn uses 30-item offset for pagination (?page=0, 30, 60, 90...)
+    offset = (p_num - 1) * 30
+
     if cat.lower() in ["trending", "home", "all"]:
-        target_url = "https://sxyprn.com/" if page == 1 else f"https://sxyprn.com/?page={page}"
+        target_url = f"https://sxyprn.com/Trending.html?page={offset}"
     else:
-        target_url = f"https://sxyprn.com/{cat.capitalize()}.html?sm=trending" if page == 1 else f"https://sxyprn.com/{cat.capitalize()}.html?sm=trending&page={page}"
+        target_url = f"https://sxyprn.com/{cat.capitalize()}.html?page={offset}&sm=trending"
 
     headers = {
         "User-Agent": session_ua,
@@ -275,11 +283,13 @@ def fetch_feed(cat="trending", page=1):
     soup = BeautifulSoup(html, 'html.parser')
     posts = soup.select('.post_el_small')
     videos = []
+    seen_ids = set()
     for p in posts:
         wl = p.select_one('[data-postid]')
         post_id = wl.get('data-postid') if wl else None
-        if not post_id:
+        if not post_id or post_id in seen_ids:
             continue
+        seen_ids.add(post_id)
 
         img = p.find('img')
         poster = ""
@@ -322,15 +332,16 @@ def fetch_feed(cat="trending", page=1):
     result = {
         "ok": True,
         "cat": cat,
-        "page": int(page),
+        "page": p_num,
+        "offset": offset,
         "count": len(videos),
         "videos": videos
     }
     feed_cache[cache_key] = (now, result)
 
-    # Pre-warm top 5 videos in background
+    # Pre-warm top 3 videos in background
     if videos:
-        background_prewarm([v["id"] for v in videos[:5]])
+        background_prewarm([v["id"] for v in videos[:3]])
 
     return result
 

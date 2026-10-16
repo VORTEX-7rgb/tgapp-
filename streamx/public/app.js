@@ -2,7 +2,9 @@ let hlsInstance = null;
 let currentCategory = 'trending';
 let currentPage = 1;
 let isLoadingMore = false;
+let hasMoreVideos = true;
 let activeStreamUrl = '';
+const renderedVideoIds = new Set();
 
 const playerContainer = document.getElementById('player-container');
 const videoElement = document.getElementById('video-element');
@@ -31,6 +33,8 @@ catChips.forEach(chip => {
     chip.classList.add('active');
     currentCategory = chip.dataset.cat;
     currentPage = 1;
+    hasMoreVideos = true;
+    renderedVideoIds.clear();
     feedTitle.textContent = `${chip.textContent} Videos`;
     loadFeed(currentCategory, 1, false);
   });
@@ -41,6 +45,9 @@ catChips.forEach(chip => {
 // ==========================================
 async function loadFeed(cat = 'trending', page = 1, append = false) {
   if (!append) {
+    renderedVideoIds.clear();
+    currentPage = 1;
+    hasMoreVideos = true;
     videoGrid.innerHTML = `
       <div class="loading-state">
         <div class="spinner"></div>
@@ -57,8 +64,11 @@ async function loadFeed(cat = 'trending', page = 1, append = false) {
     const data = await res.json();
     if (data.ok && data.videos && data.videos.length > 0) {
       if (!append) videoGrid.innerHTML = '';
-      renderVideos(data.videos, append);
-      feedStats.textContent = `${videoGrid.children.length} Streams`;
+      const added = renderVideos(data.videos, append);
+      feedStats.textContent = `${renderedVideoIds.size} Streams`;
+      if (added === 0 && append) {
+        hasMoreVideos = false;
+      }
     } else {
       if (!append) {
         videoGrid.innerHTML = `
@@ -66,6 +76,8 @@ async function loadFeed(cat = 'trending', page = 1, append = false) {
             <p>No streams found for "${cat}".</p>
           </div>
         `;
+      } else {
+        hasMoreVideos = false;
       }
     }
   } catch (err) {
@@ -84,7 +96,14 @@ async function loadFeed(cat = 'trending', page = 1, append = false) {
 }
 
 function renderVideos(videos, append = false) {
+  let addedCount = 0;
   videos.forEach(v => {
+    if (!v.id || renderedVideoIds.has(v.id)) {
+      return; // Skip duplicate video card
+    }
+    renderedVideoIds.add(v.id);
+    addedCount++;
+
     const card = document.createElement('div');
     card.className = 'video-card';
     card.onclick = () => playStream(v);
@@ -107,13 +126,14 @@ function renderVideos(videos, append = false) {
     `;
     videoGrid.appendChild(card);
   });
+  return addedCount;
 }
 
-// Window scroll listener for infinite pagination
+// Window scroll listener for infinite pagination with deduplication guard
 window.addEventListener('scroll', () => {
-  if (isLoadingMore) return;
+  if (isLoadingMore || !hasMoreVideos) return;
   const scrollPos = window.innerHeight + window.scrollY;
-  const threshold = document.body.offsetHeight - 600;
+  const threshold = document.body.offsetHeight - 700;
   if (scrollPos >= threshold) {
     isLoadingMore = true;
     currentPage += 1;
