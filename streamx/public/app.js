@@ -108,6 +108,11 @@ function renderVideos(videos, append = false) {
     card.className = 'video-card';
     card.onclick = () => playStream(v);
 
+    // Warm stream on touch/hover so first frame is ready before finger lifts
+    card.addEventListener('pointerenter', () => {
+      fetch(`/api/play?id=${encodeURIComponent(v.id)}`, { headers: { 'Range': 'bytes=0-10' } }).catch(() => {});
+    }, { once: true });
+
     const tagsHtml = (v.tags || []).slice(0, 3)
       .map(t => `<span class="tag-badge">#${t}</span>`).join('');
 
@@ -240,30 +245,11 @@ async function playStream(video) {
   videoElement.removeAttribute('src');
 
   try {
-    let streamUrl = video.streamUrl;
-    let title = video.title;
-    let related = video.related || [];
-
-    if (!streamUrl) {
-      const targetParam = video.id || video.url;
-      const t0 = performance.now();
-      const res = await fetch(`/api/stream?id=${encodeURIComponent(targetParam)}`);
-      const data = await res.json();
-      if (!data.ok || !data.streamUrl) {
-        throw new Error(data.error || 'Failed to extract stream');
-      }
-      streamUrl = data.streamUrl;
-      title = data.title || title;
-      related = data.related || [];
-      const resolveMs = Math.round(performance.now() - t0);
-      currentVideoCdn.textContent = `Connected (${resolveMs}ms)`;
-    }
-
-    renderRelated(related);
-
+    const targetParam = video.id || video.url;
+    const streamUrl = video.streamUrl || `/api/play?id=${encodeURIComponent(targetParam)}`;
     activeStreamUrl = window.location.origin + streamUrl;
-    currentVideoTitle.textContent = title;
 
+    // Fast-start: set source IMMEDIATELY without waiting for API JSON roundtrip!
     videoElement.src = streamUrl;
     videoElement.preload = 'auto';
     videoElement.load();
@@ -271,6 +257,19 @@ async function playStream(video) {
       playerStatusText.textContent = '▶ Tap to Play';
       playerLoader.classList.remove('hidden');
     });
+
+    // Fetch related metadata & recommendations in parallel background
+    fetch(`/api/stream?id=${encodeURIComponent(targetParam)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.ok) {
+          if (data.title) currentVideoTitle.textContent = data.title;
+          if (data.related) renderRelated(data.related);
+          currentVideoCdn.textContent = 'Connected (Direct Pipeline)';
+        }
+      })
+      .catch(() => {});
+
   } catch (err) {
     playerLoader.classList.remove('hidden');
     playerStatusText.textContent = 'Error: ' + err.message;

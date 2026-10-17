@@ -231,7 +231,7 @@ def background_prewarm(video_ids):
                 cached = get_cached_stream(vid)
                 if not cached:
                     resolve_video_stream(vid)
-                    time.sleep(0.5)
+                    time.sleep(0.15)
             except Exception:
                 pass
     threading.Thread(target=worker, daemon=True).start()
@@ -339,9 +339,9 @@ def fetch_feed(cat="trending", page=1):
     }
     feed_cache[cache_key] = (now, result)
 
-    # Pre-warm top 3 videos in background
+    # Pre-warm top 8 videos in background
     if videos:
-        background_prewarm([v["id"] for v in videos[:3]])
+        background_prewarm([v["id"] for v in videos[:8]])
 
     return result
 
@@ -605,9 +605,22 @@ class StreamXHandler(BaseHTTPRequestHandler):
             retry = qs.get("retry", ["0"])[0] == "1"
 
             if not cdn_url:
-                self.send_response(400)
-                self.end_headers()
-                return
+                if post_id:
+                    cached = get_cached_stream(post_id)
+                    if cached and cached.get("rawCdnUrl"):
+                        cdn_url = cached["rawCdnUrl"]
+                    else:
+                        try:
+                            resolved = resolve_video_stream(post_id)
+                            cdn_url = resolved["rawCdnUrl"]
+                        except Exception as e:
+                            self.send_response(500)
+                            self.end_headers()
+                            return
+                else:
+                    self.send_response(400)
+                    self.end_headers()
+                    return
 
             client_range = self.headers.get("Range")
             cache_file = os.path.join(RAM_CACHE_DIR, f"{post_id}_head.bin") if post_id else ""
