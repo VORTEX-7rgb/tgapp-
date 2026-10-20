@@ -437,26 +437,7 @@ async function getDirectStream(videoPageUrl) {
     // Step 1: Detect primary iframe in player container
     const iframeMatches = [...html.matchAll(/<iframe\b[^>]*src=["']([^"']+)["']/gi)].map(m => m[1]);
     
-    // Check if primary iframe is Lulu
-    for (const ifr of iframeMatches) {
-      if (/(?:luluvdo|luluvido|lulust|lulustream|luluvid)\.com\/e\/([a-zA-Z0-9]+)/i.test(ifr)) {
-        const luluData = await resolveLuluEmbed(ifr);
-        if (luluData && luluData.sx) {
-          const streamResult = {
-            ok: true,
-            type: 'hls',
-            streamUrl: `/api/live.m3u8?url=${encodeURIComponent(luluData.sx)}&ref=${encodeURIComponent(luluData.ref || 'https://luluvido.com/')}`,
-            rawUrl: luluData.sx,
-            poster: luluData.ix || poster,
-            title
-          };
-          setCached(cacheKey, streamResult, 3600);
-          return streamResult;
-        }
-      }
-    }
-
-    // Check if primary iframe is Playmate
+    // Step 1: Detect Playmate iframe in player container (Strictly fast direct-CORS)
     for (const ifr of iframeMatches) {
       const pmMatch = ifr.match(/playmate\.to\/(?:embed|watch)\/([a-zA-Z0-9]+)/i);
       if (pmMatch) {
@@ -481,7 +462,7 @@ async function getDirectStream(videoPageUrl) {
       }
     }
 
-    // Step 2: Fallback - Scan entire page HTML for Playmate
+    // Step 2: Fallback - Scan entire page HTML for Playmate links
     const pmMatches = [...html.matchAll(/playmate\.to\/(?:embed|watch)\/([a-zA-Z0-9]+)/gi)];
     const filecodes = [...new Set(pmMatches.map(m => m[1]))];
 
@@ -506,27 +487,11 @@ async function getDirectStream(videoPageUrl) {
       }
     }
 
-    // Step 3: Fallback - Scan entire page HTML for Lulu links
-    const luluPageMatches = [...html.matchAll(/https?:\/\/[^\s"']*(?:luluvdo|luluvido|lulust|lulustream|luluvid)\.com\/e\/[a-zA-Z0-9]+/gi)];
-    for (const m of luluPageMatches) {
-      const luluData = await resolveLuluEmbed(m[0]);
-      if (luluData && luluData.sx) {
-        const streamResult = {
-          ok: true,
-          type: 'hls',
-          streamUrl: `/api/live.m3u8?url=${encodeURIComponent(luluData.sx)}&ref=${encodeURIComponent(luluData.ref || 'https://luluvido.com/')}`,
-          rawUrl: luluData.sx,
-          poster: luluData.ix || poster,
-          title
-        };
-        setCached(cacheKey, streamResult, 3600);
-        return streamResult;
-      }
-    }
-
+    // Mark as dead / unavailable so it is pruned from listings
+    markDeadVideo(videoPageUrl);
     return {
       ok: false,
-      error: 'Stream is connecting. Please tap retry.',
+      error: 'Video is unavailable on high-speed CDN.',
       poster,
       title
     };

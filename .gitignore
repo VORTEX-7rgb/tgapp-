@@ -8,4 +8,16 @@ embed_playmate.html
 __pycache__/
 *.pyc
 *.db
+scratch/
+test_*
+*.txt
+public/test_*
+public/direct_proof.html
+streamx/
+extract_fresh_mp4.py
+get_stream.js
+investigate_cdn.js
+nuditok_scraper.js
+scrape_all_vmms.py
+
 

@@ -3,11 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <!-- Mandatory Production Fix #1: Zero Referer Leakage -->
+  <meta name="referrer" content="no-referrer">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>StreamBox - Premium Player</title>
-  <link rel="stylesheet" href="style.css?v=2.4.0">
+  <link rel="stylesheet" href="style.css?v=3.9.0">
   <!-- Telegram Web App SDK -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <!-- HLS.js for direct video streaming -->
@@ -18,7 +20,15 @@
     <!-- Top Header -->
     <header class="app-header">
       <div class="header-brand">
-        <span class="logo-red">NET</span>FLIX<span class="badge-mini">MINI</span>
+        <span class="logo-red">NET</span>FLIX<span class="badge-mini">PRO</span>
+      </div>
+      <div class="source-tabs" id="source-tabs">
+        <button class="source-tab active" data-source="kamababa" id="tab-kamababa">🔥 KamaBaba</button>
+        <button class="source-tab" data-source="viralmms" id="tab-viralmms">⚡ ViralMMS</button>
+        <button class="source-tab" data-source="desi52" id="tab-desi52">🎬 Desi52</button>
+        <button class="source-tab" data-source="usersporn" id="tab-usersporn">💎 UsersPorn</button>
+        <button class="source-tab" data-source="cumlouder" id="tab-cumlouder">💦 Cumlouder</button>
+        <button class="source-tab" data-source="upskirt" id="tab-upskirt">👗 Upskirt HD</button>
       </div>
       <div class="search-bar">
         <input type="text" id="search-input" placeholder="Search videos...">
@@ -28,11 +38,20 @@
 
     <!-- In-Page Player Section (YouTube / Netflix Mobile Style - NOT a fullscreen blocker) -->
     <section id="player-section" class="player-section hidden">
-      <div class="player-wrapper">
-        <video id="native-player" class="video-element" controls playsinline="true" webkit-playsinline="true" x5-playsinline="true" x5-video-player-type="h5-page" preload="metadata">
+      <div class="player-wrapper" id="player-wrapper">
+        <video id="native-player" class="video-element" controls playsinline="true" webkit-playsinline="true" x5-playsinline="true" x5-video-player-type="h5-page" preload="metadata" referrerpolicy="no-referrer">
           Your browser does not support HTML5 video.
         </video>
-        <iframe id="embed-player" class="video-element hidden" frameborder="0" allowfullscreen allow="autoplay; fullscreen; encrypted-media"></iframe>
+        <iframe id="embed-player" class="video-element hidden" frameborder="0" sandbox="allow-scripts allow-same-origin" allow="fullscreen; autoplay; encrypted-media" referrerpolicy="no-referrer"></iframe>
+        
+        <!-- Floating Tap-for-Sound Badge (Mandatory Production Fix #3) -->
+        <button id="unmute-badge" class="unmute-badge hidden">🔊 Tap for Sound</button>
+
+        <!-- Double-Tap Seek Indicators -->
+        <div id="seek-overlay-left" class="seek-overlay left hidden">⏪ -10s</div>
+        <div id="seek-overlay-right" class="seek-overlay right hidden">⏩ +10s</div>
+
+        <!-- Buffering & ISP Error Overlay -->
         <div id="player-buffering" class="player-buffering hidden">
           <div class="spinner"></div>
           <p id="player-status-text">Connecting clean stream...</p>
@@ -42,11 +61,25 @@
         <div class="player-bar-left">
           <h3 id="player-video-title" class="player-title">Now Playing</h3>
           <div class="player-badges">
-            <span class="badge-tag red">⚡ Direct CDN</span>
+            <span class="badge-tag red" id="player-cdn-badge">⚡ Direct CDN</span>
             <span class="badge-tag green">0 Ads / 0 Popups</span>
           </div>
         </div>
-        <button id="close-player-btn" class="close-btn" title="Close Player">✕ Close Player</button>
+        <div class="player-controls-extra">
+          <div class="quality-selector hidden" id="quality-selector">
+            <button class="quality-btn" data-quality="360p">360p</button>
+            <button class="quality-btn" data-quality="480p">480p</button>
+            <button class="quality-btn active" data-quality="720p">720p</button>
+            <button class="quality-btn" data-quality="1080p">1080p</button>
+          </div>
+          <div class="speed-selector" id="speed-selector">
+            <button class="speed-btn" data-speed="0.75">0.75x</button>
+            <button class="speed-btn active" data-speed="1.0">1x</button>
+            <button class="speed-btn" data-speed="1.25">1.25x</button>
+            <button class="speed-btn" data-speed="1.5">1.5x</button>
+          </div>
+          <button id="close-player-btn" class="close-btn" title="Close Player">✕ Close</button>
+        </div>
       </div>
     </section>
 
@@ -84,6 +117,6 @@
     </main>
   </div>
 
-  <script src="app.js?v=2.8.0"></script>
+  <script src="app.js?v=3.9.8"></script>
 </body>
 </html>

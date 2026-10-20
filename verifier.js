@@ -81,8 +81,8 @@ function checkSegment(url, referer) {
         res.on('close', () => {
           const total = chunks.reduce((a, b) => a + b.length, 0);
           const firstByte = chunks[0] ? chunks[0][0] : null;
-          // Valid video segment: status 200, > 50KB, and valid sync byte or verified encrypted media
-          const isReal = res.statusCode === 200 && total > 50000 && (firstByte === 0x47 || firstByte === 0x00 || firstByte === 0x49 || total > 150000);
+          // Valid video segment: status 200 or 206, > 50KB, and valid sync byte or verified encrypted media
+          const isReal = (res.statusCode === 200 || res.statusCode === 206) && total > 50000 && (firstByte === 0x47 || firstByte === 0x00 || firstByte === 0x49 || total > 150000);
           resolve({
             status: res.statusCode,
             length: len || total,
