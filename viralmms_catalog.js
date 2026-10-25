@@ -5,18 +5,31 @@ const { spawn } = require('child_process');
 const CATALOG_FILE = path.join(__dirname, 'data', 'viralmms_catalog.json');
 
 const CATEGORIES = [
-  { name: '🔥 All / Latest', slug: 'all' },
-  { name: '🔞 Leaked Tapes', slug: 'xxx_leaked_tapes' },
-  { name: '⚡ Viral Kand', slug: 'viral_porn_kand' },
-  { name: '📱 Indian MMS', slug: 'indian_mms_porn' },
-  { name: '💃 Desi Models', slug: 'indian_actress_nude_hub' },
-  { name: '🌟 DesiHub', slug: 'desihub_premium' },
-  { name: '🌾 Desi Punjab', slug: 'desi_punjab_porn' },
-  { name: '🇵🇰 Pakistani MMS', slug: 'pakistani_porn' }
+  { name: '🔥 All Videos', slug: 'all' },
+  { name: '👄 Oral & Blowjob', slug: 'oral' },
+  { name: '🧕 Bhabhi & Devar', slug: 'bhabhi' },
+  { name: '🧓 Aunty & Milf', slug: 'aunty' },
+  { name: '🤳 Solo & Cam', slug: 'solo' },
+  { name: '💦 Cum & Creampie', slug: 'cum' },
+  { name: '🎓 College & Teen', slug: 'college' },
+  { name: '🌾 Village & Dehati', slug: 'village' },
+  { name: '🍑 Anal & Back', slug: 'anal' },
+  { name: '🐕 Doggystyle', slug: 'doggystyle' },
+  { name: '💥 Hardcore & Rough', slug: 'hardcore' },
+  { name: '🍈 Boobs & Pressing', slug: 'boobs' },
+  { name: '🏨 Hotel & OYO', slug: 'hotel' },
+  { name: '❤️ Amateur Couple', slug: 'amateur' },
+  { name: '🌴 Tamil & South', slug: 'tamil' },
+  { name: '🌾 Punjabi', slug: 'punjabi' },
+  { name: '🌊 Mallu & Telugu', slug: 'mallu' },
+  { name: '🐟 Bangla & Bengali', slug: 'bangla' },
+  { name: '🪕 Bhojpuri', slug: 'bhojpuri' },
+  { name: '🏔️ Pakistani & Kashmiri', slug: 'pakistani' }
 ];
 
 // In-Memory Index (O(1) Map lookups for sub-millisecond response)
 const catalogMap = new Map();
+const categoryIndexMap = new Map();
 let catalogList = [];
 let isSyncing = false;
 let lastLoadedMtime = 0;
@@ -32,13 +45,26 @@ function loadCatalog() {
       const items = JSON.parse(raw);
       if (Array.isArray(items)) {
         catalogMap.clear();
+        categoryIndexMap.clear();
+
         items.forEach(item => {
           if (item && item.id && item.streamUrl) {
             catalogMap.set(item.id, item);
+
+            // Populate Inverted Category Index
+            const itemTags = Array.isArray(item.tags) ? item.tags : [];
+            const allSlugs = new Set([item.category, ...itemTags]);
+            for (const s of allSlugs) {
+              if (!s) continue;
+              if (!categoryIndexMap.has(s)) {
+                categoryIndexMap.set(s, []);
+              }
+              categoryIndexMap.get(s).push(item);
+            }
           }
         });
         catalogList = Array.from(catalogMap.values());
-        console.log(`[ViralMMS Catalog] Loaded ${catalogMap.size} verified videos into memory.`);
+        console.log(`[ViralMMS Catalog] Loaded ${catalogMap.size} verified videos across ${categoryIndexMap.size} categories into memory.`);
       }
     }
   } catch (err) {
@@ -130,9 +156,19 @@ function getBrowseVideos(page = 1, limit = 20) {
  */
 function getCategoryVideos(slug, page = 1, limit = 20) {
   checkAutoReload();
-  const filtered = slug === 'all'
-    ? catalogList
-    : catalogList.filter(v => v.category === slug || (v.slug && v.slug.includes(slug)));
+  let filtered;
+  if (!slug || slug === 'all') {
+    filtered = catalogList;
+  } else if (categoryIndexMap.has(slug)) {
+    filtered = categoryIndexMap.get(slug);
+  } else {
+    // Fallback if slug not directly in map
+    filtered = catalogList.filter(v =>
+      v.category === slug ||
+      (v.slug && v.slug.includes(slug)) ||
+      (Array.isArray(v.tags) && v.tags.includes(slug))
+    );
+  }
 
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -154,9 +190,10 @@ function getCategoryVideos(slug, page = 1, limit = 20) {
 }
 
 /**
- * In-memory keyword search across titles, slugs, and categories
+ * In-memory keyword search across titles, slugs, categories, tags, and hashtags
  */
 function searchVideos(query, page = 1, limit = 20) {
+  checkAutoReload();
   const q = (query || '').toLowerCase().trim();
   if (!q) {
     return getBrowseVideos(page, limit);
@@ -164,7 +201,9 @@ function searchVideos(query, page = 1, limit = 20) {
 
   const terms = q.split(/\s+/).filter(Boolean);
   const matched = catalogList.filter(v => {
-    const text = `${v.title || ''} ${v.slug || ''} ${v.category || ''}`.toLowerCase();
+    const tagsStr = Array.isArray(v.tags) ? v.tags.join(' ') : '';
+    const hashStr = Array.isArray(v.hashtags) ? v.hashtags.join(' ') : '';
+    const text = `${v.title || ''} ${v.slug || ''} ${v.category || ''} ${tagsStr} ${hashStr}`.toLowerCase();
     return terms.every(t => text.includes(t));
   });
 
@@ -217,6 +256,65 @@ function getCatalogSize() {
   return catalogList.length;
 }
 
+/**
+ * Fast recommendation engine for ViralMMS videos
+ * Matches category index and title keywords with zero-latency in-memory lookup
+ */
+function getRelatedVideos(currentId, category = '', title = '', limit = 12) {
+  checkAutoReload();
+  if (!catalogList || catalogList.length === 0) return [];
+
+  const s = (category || '').toLowerCase().trim();
+  const titleWords = (title || '').toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 3 && !['viral', 'video', 'full', 'leak', 'desi', 'mms', 'part', 'indian', 'hindi', 'watch'].includes(w));
+
+  const matched = [];
+  const seenIds = new Set([String(currentId)]);
+
+  if (s && categoryIndexMap.has(s)) {
+    const pool = categoryIndexMap.get(s) || [];
+    for (let i = 0; i < pool.length; i++) {
+      const v = pool[i];
+      if (!seenIds.has(String(v.id))) {
+        seenIds.add(String(v.id));
+        matched.push(v);
+        if (matched.length >= limit * 2) break;
+      }
+    }
+  }
+
+  if (matched.length < limit && titleWords.length > 0) {
+    for (let i = 0; i < catalogList.length; i++) {
+      const v = catalogList[i];
+      if (seenIds.has(String(v.id))) continue;
+      const vText = `${v.title || ''} ${v.slug || ''}`.toLowerCase();
+      if (titleWords.some(w => vText.includes(w))) {
+        seenIds.add(String(v.id));
+        matched.push(v);
+        if (matched.length >= limit * 2) break;
+      }
+    }
+  }
+
+  matched.sort(() => Math.random() - 0.5);
+  const results = matched.slice(0, limit);
+
+  if (results.length < limit) {
+    const randOffset = Math.floor(Math.random() * Math.max(1, catalogList.length - limit));
+    for (let i = randOffset; i < catalogList.length && results.length < limit; i++) {
+      const v = catalogList[i];
+      if (!seenIds.has(String(v.id))) {
+        seenIds.add(String(v.id));
+        results.push(v);
+      }
+    }
+  }
+
+  return results;
+}
+
 // Initial boot load
 loadCatalog();
 
@@ -239,6 +337,7 @@ module.exports = {
   getBrowseVideos,
   getCategoryVideos,
   searchVideos,
+  getRelatedVideos,
   syncCatalog,
   isSyncing: () => isSyncing,
   getCatalogSize

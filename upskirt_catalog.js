@@ -26,8 +26,14 @@ function loadCatalog() {
     }
     const raw = fs.readFileSync(CATALOG_PATH, 'utf8');
     const data = JSON.parse(raw || '[]');
-    console.log(`[Upskirt Catalog] Loaded ${data.length} videos into RAM.`);
-    return data;
+    const standardized = data.map(v => ({
+      ...v,
+      type: 'mp4',
+      streamUrl: `/api/ut/stream/${v.numericId}.mp4`,
+      directStreamUrl: `/api/ut/stream/${v.numericId}.mp4`
+    }));
+    console.log(`[Upskirt Catalog] Loaded ${standardized.length} videos with permanent virtual stream URLs into RAM.`);
+    return standardized;
   } catch (err) {
     console.error('[Upskirt Catalog] Read error:', err.message);
     return [];
@@ -166,10 +172,24 @@ function searchUtVideos(query = '', page = 1, limit = 24) {
   const cleanQ = query.toLowerCase().trim();
   if (!cleanQ) return getUtBrowse(page, limit);
 
+  // Resilient query normalization (sweety -> sweetie, gattouzo -> gattouz0, comatoz -> commatoz)
+  const normQ = cleanQ
+    .replace(/sweety/g, 'sweetie')
+    .replace(/gattouzo/g, 'gattouz0')
+    .replace(/comatoz/g, 'commatoz');
+  const noSpaces = normQ.replace(/[^a-z0-9]/g, '');
+
   const matched = catalog.filter(v => {
     const t = (v.title || '').toLowerCase();
     const s = (v.slug || '').toLowerCase();
-    return t.includes(cleanQ) || s.includes(cleanQ);
+    const p = (v.performer || '').toLowerCase();
+    const tags = Array.isArray(v.tags) ? v.tags.join(' ').toLowerCase() : '';
+    const pClean = p.replace(/[^a-z0-9]/g, '');
+    const tClean = t.replace(/[^a-z0-9]/g, '');
+    return t.includes(cleanQ) || s.includes(cleanQ) || p.includes(cleanQ) ||
+           t.includes(normQ) || s.includes(normQ) || p.includes(normQ) ||
+           pClean.includes(noSpaces) || tags.includes(cleanQ) || tags.includes(normQ) ||
+           tags.includes(noSpaces) || tClean.includes(noSpaces);
   });
 
   const start = (page - 1) * limit;
@@ -192,37 +212,63 @@ function searchUtVideos(query = '', page = 1, limit = 24) {
  * Gets or on-demand resolves stream info for a given video ID
  */
 async function getOrResolveUtStream(idOrNumeric, force = false) {
-  const numericId = idOrNumeric.replace(/^ut-/, '');
+  const numericId = String(idOrNumeric).replace(/^ut-/, '');
   
   // Check RAM catalog first
   let item = catalog.find(v => v.numericId === numericId || v.id === idOrNumeric);
   const now = Math.floor(Date.now() / 1000);
 
-  // If item already has a valid streamUrl that is not expired
-  if (!force && item && item.streamUrl && item.expiresAt && (item.expiresAt - now > 300)) {
+  // If item already has a valid raw upstream URL that is not expired
+  if (!force && item && item.upstreamUrl && item.expiresAt && (item.expiresAt - now > 300)) {
     return item;
   }
 
   // Resolve on-demand from API in <200ms
-  console.log(`[Upskirt Stream] Resolving stream on-demand for ID ${numericId}...`);
+  console.log(`[Upskirt Stream] Resolving upstream stream for ID ${numericId}...`);
   const resolved = await resolveVideo(numericId);
   if (resolved && resolved.streamUrl) {
+    const upstreamUrl = resolved.streamUrl;
+    const permanentVirtualUrl = `/api/ut/stream/${numericId}.mp4`;
+    const merged = {
+      ...resolved,
+      upstreamUrl,
+      streamUrl: permanentVirtualUrl,
+      directStreamUrl: permanentVirtualUrl
+    };
     if (item) {
-      Object.assign(item, resolved);
+      Object.assign(item, merged);
     } else {
       item = {
         id: `ut-${numericId}`,
         numericId,
-        ...resolved
+        ...merged
       };
       catalog.unshift(item);
     }
     // Update disk asynchronously
     saveCatalog(catalog);
-    return item;
+    return { ...item, upstreamUrl };
   }
 
   return item || null;
+}
+
+function getRelatedVideos(currentId, category = '', title = '', limit = 12) {
+  if (!catalog || catalog.length === 0) return [];
+  const candidates = catalog.filter(v => v.id !== currentId && v.numericId !== currentId);
+  if (candidates.length <= limit) return candidates;
+
+  const s = (category || '').toLowerCase().trim();
+  const matched = candidates.filter(v => {
+    if (s && ((v.category && v.category.toLowerCase().includes(s)) || (Array.isArray(v.tags) && v.tags.some(t => String(t).toLowerCase().includes(s))))) {
+      return true;
+    }
+    return false;
+  });
+
+  const remaining = candidates.filter(v => !matched.includes(v));
+  const combined = [...matched, ...remaining];
+  return combined.slice(0, limit);
 }
 
 module.exports = {
@@ -232,6 +278,7 @@ module.exports = {
   getUtBrowse,
   searchUtVideos,
   getOrResolveUtStream,
+  getRelatedVideos,
   CATEGORIES,
   getCatalog: () => catalog,
   isSyncing: () => isSyncing

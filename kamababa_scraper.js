@@ -5,22 +5,26 @@ const { URL } = require('url');
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
 const CATEGORIES = [
-  { name: 'Latest / All', slug: 'all' },
-  { name: 'Desi', slug: 'desi' },
-  { name: 'Aunty', slug: 'aunty' },
-  { name: 'Blowjob', slug: 'blowjob' },
-  { name: 'Hindi Sexy', slug: 'hindi-sexy-videos' },
-  { name: 'Bangla Sex', slug: 'bangla-sex' },
-  { name: 'Pakistani Sex', slug: 'pakistani-sex' },
-  { name: 'Indian', slug: 'indian' },
-  { name: 'Maid', slug: 'maid' },
-  { name: 'Anal', slug: 'anal' },
-  { name: 'Group Sex', slug: 'groupsex' },
-  { name: 'Hardcore', slug: 'hardcore' },
-  { name: 'Desi Hidden Sex', slug: 'desi-hidden-sex' },
-  { name: 'Bathroom', slug: 'bathroom' },
-  { name: 'Actress', slug: 'actress' },
-  { name: 'Lesbian', slug: 'lesbian' }
+  { name: '🔥 All Videos', slug: 'all' },
+  { name: '👄 Oral & Blowjob', slug: 'oral' },
+  { name: '🧕 Bhabhi & Devar', slug: 'bhabhi' },
+  { name: '🧓 Aunty & Milf', slug: 'aunty' },
+  { name: '🤳 Solo & Cam', slug: 'solo' },
+  { name: '💦 Cum & Creampie', slug: 'cum' },
+  { name: '🎓 College & Teen', slug: 'college' },
+  { name: '🌾 Village & Dehati', slug: 'village' },
+  { name: '🍑 Anal & Back', slug: 'anal' },
+  { name: '🐕 Doggystyle', slug: 'doggystyle' },
+  { name: '💥 Hardcore & Rough', slug: 'hardcore' },
+  { name: '🍈 Boobs & Pressing', slug: 'boobs' },
+  { name: '🏨 Hotel & OYO', slug: 'hotel' },
+  { name: '❤️ Amateur Couple', slug: 'amateur' },
+  { name: '🌴 Tamil & South', slug: 'tamil' },
+  { name: '🌾 Punjabi', slug: 'punjabi' },
+  { name: '🌊 Mallu & Telugu', slug: 'mallu' },
+  { name: '🐟 Bangla & Bengali', slug: 'bangla' },
+  { name: '🪕 Bhojpuri', slug: 'bhojpuri' },
+  { name: '🏔️ Pakistani & Kashmiri', slug: 'pakistani' }
 ];
 
 /**
@@ -41,6 +45,7 @@ function proxyThumbnail(url) {
 function httpGet(targetUrl, headers = {}, timeoutMs = 9000, maxRetries = 2) {
   return new Promise((resolve, reject) => {
     let attempt = 0;
+    let redirectHops = 0;
 
     function execute(url) {
       attempt++;
@@ -65,9 +70,18 @@ function httpGet(targetUrl, headers = {}, timeoutMs = 9000, maxRetries = 2) {
         };
 
         const req = transport.request(reqOptions, (res) => {
-          // Handle HTTP redirects (301, 302, 307, 308)
+          // Handle HTTP redirects (301, 302, 307, 308) with infinite loop protection
           if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
+            redirectHops++;
+            if (redirectHops > 3) {
+              res.resume();
+              return reject(new Error(`Too many redirects (${redirectHops}) on ${url}`));
+            }
             const redirectUrl = new URL(res.headers.location, url).toString();
+            if (redirectUrl === url) {
+              res.resume();
+              return reject(new Error(`Infinite self-redirect detected on ${url}`));
+            }
             res.resume();
             return execute(redirectUrl);
           }

@@ -165,10 +165,12 @@ async function startPolling() {
   isPolling = true;
   console.log('[Bot] Polling loop started for @Fiziiiibot...');
 
+  let consecutiveConflicts = 0;
   while (isPolling) {
     try {
       const updatesRes = await getUpdates(lastUpdateId + 1, 15);
       if (updatesRes.ok && Array.isArray(updatesRes.result)) {
+        consecutiveConflicts = 0;
         for (const update of updatesRes.result) {
           lastUpdateId = Math.max(lastUpdateId, update.update_id);
           try {
@@ -177,10 +179,21 @@ async function startPolling() {
             console.error('[Update Handler Error]:', handlerErr);
           }
         }
+      } else {
+        if (updatesRes.description && updatesRes.description.includes('Conflict')) {
+          consecutiveConflicts++;
+          const waitTime = consecutiveConflicts > 3 ? 60000 : 15000;
+          if (consecutiveConflicts === 1 || consecutiveConflicts === 4) {
+            console.log(`[Bot Conflict] Another bot instance is polling @Fiziiiibot. Backing off ${waitTime / 1000}s...`);
+          }
+          await new Promise(r => setTimeout(r, waitTime));
+        } else {
+          await new Promise(r => setTimeout(r, 5000));
+        }
       }
     } catch (err) {
       console.error('[Polling Network Error]:', err.message);
-      await new Promise(r => setTimeout(r, 3000));
+      await new Promise(r => setTimeout(r, 5000));
     }
   }
 }

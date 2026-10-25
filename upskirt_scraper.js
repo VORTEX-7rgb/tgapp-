@@ -1,4 +1,4 @@
-/**
+﻿/**
  * upskirt_scraper.js - Production scraper & API resolver for upskirt.tv
  * 
  * Features:
@@ -17,7 +17,18 @@ const HOST = 'upskirt.tv';
 const API_HOST = 'api.upskirt.tv';
 
 // Cloudflare IPs for upskirt.tv
-const CLOUDFLARE_IPS = ['104.26.10.10', '104.26.11.10', '172.67.69.17'];
+const CLOUDFLARE_IPS = [
+  '162.159.128.1',
+  '162.159.135.42',
+  '172.64.80.1',
+  '104.20.0.1',
+  '104.19.0.1',
+  '104.18.0.1',
+  '104.18.1.1',
+  '104.21.2.2',
+  '104.21.3.3',
+  '104.26.10.10'
+];
 // Edge IP for api.upskirt.tv
 const API_IPS = ['45.84.31.172'];
 
@@ -55,7 +66,7 @@ function fetchUpskirt(path = '/latest', maxRetries = 3) {
       let tlsSocket = null;
       let resolved = false;
 
-      const ip = CLOUDFLARE_IPS[(attempt - 1) % CLOUDFLARE_IPS.length];
+      const ip = CLOUDFLARE_IPS[(attempt - 1 + Math.floor(Math.random() * CLOUDFLARE_IPS.length)) % CLOUDFLARE_IPS.length];
 
       const cleanup = () => {
         try { if (tlsSocket) tlsSocket.destroy(); } catch (e) {}
@@ -76,7 +87,7 @@ function fetchUpskirt(path = '/latest', maxRetries = 3) {
 
       const timer = setTimeout(() => {
         retryOrReject(new Error(`Fetch timeout on ${path}`));
-      }, 15000);
+      }, 6000);
 
       try {
         rawSocket = net.connect(443, ip, () => {
@@ -126,14 +137,12 @@ function fetchUpskirt(path = '/latest', maxRetries = 3) {
               }
             }
 
-            if (expectedLen !== -1 && totalLen >= expectedLen) {
-              if (!resolved) {
-                resolved = true;
-                clearTimeout(timer);
-                cleanup();
-                resolve(buffer.toString('utf-8'));
-              }
-            } else if (isChunked && buffer.slice(-5).toString().includes('0\r\n\r\n')) {
+            const tail = buffer.slice(-60).toString('utf-8');
+            const isDone = (expectedLen !== -1 && totalLen >= expectedLen) ||
+                           (isChunked && tail.includes('0\r\n\r\n')) ||
+                           (buffer.length > 5000 && tail.includes('</html>'));
+
+            if (isDone) {
               if (!resolved) {
                 resolved = true;
                 clearTimeout(timer);
@@ -156,6 +165,9 @@ function fetchUpskirt(path = '/latest', maxRetries = 3) {
         });
 
         rawSocket.on('error', retryOrReject);
+        rawSocket.setTimeout(4000, () => {
+          retryOrReject(new Error(`Socket timeout on ${path}`));
+        });
       } catch (err) {
         retryOrReject(err);
       }
@@ -403,7 +415,110 @@ async function getListingPage(page = 1, category = '') {
   return parseListing(html);
 }
 
+
+const PIX_IPS = [
+  '79.127.138.15', '79.127.138.28', '79.127.138.21', '79.127.138.18',
+  '79.127.235.9', '79.127.213.228', '79.127.235.3', '79.127.235.5'
+];
+
+/**
+ * Fetches pix.upskirt.tv thumbnails bypassing Indian ISP DPI middlebox blocks
+ */
+function fetchPixDpi(imageUrl, maxRetries = 2) {
+  return new Promise((resolve, reject) => {
+    let attempt = 0;
+    let parsed;
+    try {
+      parsed = new URL(imageUrl);
+    } catch (e) {
+      return reject(e);
+    }
+    const reqPath = parsed.pathname + (parsed.search || '');
+    const hostname = parsed.hostname || 'pix.upskirt.tv';
+
+    const doFetch = () => {
+      attempt++;
+      let resolved = false;
+      const ip = PIX_IPS[(attempt - 1 + Math.floor(Math.random() * PIX_IPS.length)) % PIX_IPS.length];
+
+      const rawSocket = net.connect(443, ip, () => {
+        const splitter = new DpiSplitter();
+        splitter.pipe(rawSocket);
+        const duplex = new Duplex({
+          read() {},
+          write(c, e, cb) { splitter.write(c, e, cb); }
+        });
+        rawSocket.on('data', c => duplex.push(c));
+        rawSocket.on('end', () => duplex.push(null));
+
+        const tlsSocket = tls.connect({
+          socket: duplex,
+          servername: hostname,
+          rejectUnauthorized: false
+        }, () => {
+          const req = `GET ${reqPath} HTTP/1.1\r\n` +
+            `Host: ${hostname}\r\n` +
+            `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36\r\n` +
+            `Accept: image/avif,image/webp,image/apng,image/*,*/*;q=0.8\r\n` +
+            `Referer: https://upskirt.tv/\r\n` +
+            `Connection: close\r\n\r\n`;
+          tlsSocket.write(req);
+        });
+
+        const chunks = [];
+        tlsSocket.on('data', c => chunks.push(c));
+        tlsSocket.on('end', () => {
+          if (resolved) return;
+          resolved = true;
+          const full = Buffer.concat(chunks);
+          const headerEnd = full.indexOf('\r\n\r\n');
+          if (headerEnd === -1) {
+            if (attempt <= maxRetries) return doFetch();
+            return reject(new Error('Invalid HTTP response from pix CDN'));
+          }
+          const headerStr = full.slice(0, headerEnd).toString('utf-8');
+          const statusMatch = headerStr.match(/HTTP\/1\.[01]\s+(\d+)/);
+          const status = statusMatch ? parseInt(statusMatch[1], 10) : 500;
+          if (status !== 200 && status !== 304) {
+            if (attempt <= maxRetries) return doFetch();
+            return reject(new Error(`Upstream pix CDN returned HTTP ${status}`));
+          }
+          const ctMatch = headerStr.match(/content-type:\s*([^\r\n]+)/i);
+          const contentType = ctMatch ? ctMatch[1].trim() : 'image/jpeg';
+          const body = full.slice(headerEnd + 4);
+          resolve({ data: body, contentType });
+        });
+
+        tlsSocket.on('error', err => {
+          if (resolved) return;
+          resolved = true;
+          if (attempt <= maxRetries) return doFetch();
+          reject(err);
+        });
+      });
+
+      rawSocket.on('error', err => {
+        if (resolved) return;
+        resolved = true;
+        if (attempt <= maxRetries) return doFetch();
+        reject(err);
+      });
+
+      rawSocket.setTimeout(6000, () => {
+        try { rawSocket.destroy(); } catch (_) {}
+        if (resolved) return;
+        resolved = true;
+        if (attempt <= maxRetries) return doFetch();
+        reject(new Error('Pix DPI fetch timeout'));
+      });
+    };
+
+    doFetch();
+  });
+}
+
 module.exports = {
+  fetchPixDpi,
   fetchUpskirt,
   callUpskirtApi,
   parseListing,

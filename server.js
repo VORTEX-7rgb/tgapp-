@@ -1,3 +1,4 @@
+const coWatch = require('./co_watch_engine');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -7,6 +8,14 @@ const net = require('net');
 const tls = require('tls');
 const dns = require('dns');
 const { Transform, Duplex } = require('stream');
+
+// Crash Shield: Prevent unhandled upstream socket resets or rejections from terminating server
+process.on('uncaughtException', (err) => {
+  console.error('[CRASH SHIELD] Uncaught Exception:', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[CRASH SHIELD] Unhandled Rejection:', (reason && reason.message) || reason);
+});
 
 // High-performance persistent keep-alive connection pools for proxying upstream chunks
 const proxyAgentHttps = new https.Agent({
@@ -51,6 +60,7 @@ const {
   searchVideos: searchKmbVideos,
   getVideoById: getKmbVideoById,
   getVideoByUrl: getKmbVideoByUrl,
+  getRelatedVideos: getKmbRelated,
   syncCatalog: syncKmbCatalog,
   isSyncing: isKmbSyncing,
   getCatalogSize: getKmbCatalogSize
@@ -62,42 +72,57 @@ const {
   searchVideos: searchVmmsVideos,
   getVideoById: getVmmsVideoById,
   getVideoByUrl: getVmmsVideoByUrl,
+  getRelatedVideos: getVmmsRelated,
   syncCatalog: syncVmmsCatalog,
   isSyncing: isVmmsSyncing,
   getCatalogSize: getVmmsCatalogSize
 } = require('./viralmms_catalog');
-const {
-  CATEGORIES: UP_CATEGORIES,
-  getBrowseVideos: getUpBrowse,
-  getCategoryVideos: getUpCategory,
-  searchVideos: searchUpVideos,
-  getVideoById: getUpVideoById,
-  getOrResolveStream: getOrResolveUpStream,
-  syncCatalog: syncUpCatalog,
-  startAutoRefresher: startUpAutoRefresher,
-  isSyncing: isUpSyncing,
-  getCatalogSize: getUpCatalogSize
-} = require('./usersporn_catalog');
-const {
-  CATEGORIES: CL_CATEGORIES,
-  getBrowseVideos: getClBrowse,
-  getCategoryVideos: getClCategory,
-  searchVideos: searchClVideos,
-  getVideoById: getClVideoById,
-  getOrResolveStream: getOrResolveClStream,
-  syncCatalog: syncClCatalog,
-  startAutoRefresher: startClAutoRefresher,
-  isSyncing: isClSyncing,
-  getCatalogSize: getClCatalogSize
-} = require('./cumlouder_catalog');
+
+const { fetchPixDpi } = require('./upskirt_scraper');
+
 const {
   CATEGORIES: UT_CATEGORIES,
   getUtBrowse,
   searchUtVideos,
   getOrResolveUtStream,
+  getRelatedVideos: getUtRelated,
   syncCatalog: syncUtCatalog,
   isSyncing: isUtSyncing
 } = require('./upskirt_catalog');
+
+const {
+  CATEGORIES: SKBJ_CATEGORIES,
+  getBrowseVideos: getSkbjBrowse,
+  getCategoryVideos: getSkbjCategory,
+  searchVideos: searchSkbjVideos,
+  getVideoById: getSkbjVideoById,
+  getRelatedVideos: getSkbjRelated,
+  getCatalogSize: getSkbjCatalogSize
+} = require('./sexkbj_catalog');
+const {
+  CATEGORIES: PB_CATEGORIES,
+  getBrowseVideos: getPbBrowse,
+  getCategoryVideos: getPbCategory,
+  searchVideos: searchPbVideos,
+  getVideoById: getPbVideoById,
+  getCatalogSize: getPbCatalogSize
+} = require('./pornbusy_catalog');
+const { getReels, getPersonalizedFeed, recordTelemetry } = require('./reels_catalog');
+const cinemaRecommender = require('./cinema_recommender');
+
+function refreshCinemaCatalog() {
+  try {
+    const kmb = (typeof getKmbBrowse === 'function') ? (getKmbBrowse(1, 99999).videos || []) : [];
+    const vmms = (typeof getVmmsBrowse === 'function') ? (getVmmsBrowse(1, 99999).videos || []) : [];
+    const pb = (typeof getPbBrowse === 'function') ? (getPbBrowse(1, 99999).videos || []) : [];
+    const skbj = (typeof getSkbjBrowse === 'function') ? (getSkbjBrowse(1, 99999).videos || []) : [];
+    const ut = (typeof getUtBrowse === 'function') ? (getUtBrowse(1, 99999).videos || []) : [];
+    cinemaRecommender.initCinemaCatalog([...kmb, ...vmms, ...pb, ...skbj, ...ut]);
+  } catch (err) {
+    console.error('[Cinema Recommender Refresh Error]:', err.message);
+  }
+}
+refreshCinemaCatalog();
 
 const app = express();
 
@@ -118,7 +143,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '256kb' }));
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')) {
@@ -136,6 +161,66 @@ if (!fs.existsSync(CACHE_DIR)) {
 }
 
 // ==========================================
+// REELS & SHORTS API (TIER 1 PLATFORMS)
+// OnlyTik + NudiTok + Desi MMS Smartphone Leaks
+// Zero VPS Bandwidth - Direct Client CDN Stream
+// ==========================================
+
+// Personalized Dopamine Feed Endpoint
+app.post('/api/reels/feed', async (req, res) => {
+  try {
+    const {
+      source = (req.body && req.body.category) || 'trending',
+      limit = 20,
+      desiRatio = 0.5,
+      topTags = {},
+      dislikedTags = [],
+      recentSeenIds = [],
+      sessionSeed = Date.now()
+    } = req.body || {};
+
+    const data = await getPersonalizedFeed({
+      source,
+      limit,
+      desiRatio,
+      topTags,
+      dislikedTags,
+      recentSeenIds,
+      sessionSeed
+    });
+    res.json(data);
+  } catch (err) {
+    console.error('[API POST /api/reels/feed Error]:', err.message);
+    res.status(500).json({ ok: false, error: err.message, reels: [] });
+  }
+});
+
+// Crowd Telemetry Ingestion Endpoint
+app.post('/api/reels/telemetry', (req, res) => {
+  try {
+    const events = Array.isArray(req.body?.events) ? req.body.events : [];
+    const updated = recordTelemetry(events);
+    res.json({ ok: true, processed: updated });
+  } catch (err) {
+    console.error('[API POST /api/reels/telemetry Error]:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.get('/api/reels', async (req, res) => {
+  const source = req.query.source || 'all';
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 15;
+  try {
+    const data = await getReels(source, page, limit);
+    res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300');
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ==========================================
 // STREAMING & BROWSING APIS
 // Zero ads, zero popups, zero Cloudflare turnstile
 // Zero bandwidth on our VPS (client streams direct from CDN)
@@ -144,91 +229,38 @@ if (!fs.existsSync(CACHE_DIR)) {
 // 1. Get Categories
 app.get('/api/categories', (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400');
-  res.json({ ok: true, categories: CATEGORIES });
+  res.json({ ok: true, categories: KMB_CATEGORIES });
 });
 
 // 2. Browse Videos (Serves 100% pre-verified, zero-broken, fast Playmate videos instantly)
-app.get('/api/browse', async (req, res) => {
+app.get('/api/browse', (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
-  const verified = getVerifiedBrowse(page, 20);
-  if (verified && verified.totalVideos > 0) {
-    res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=3600, stale-while-revalidate=86400');
-    return res.json(verified);
-  }
-
+  const limit = parseInt(req.query.limit, 10) || 20;
+  const result = getKmbBrowse(page, limit);
   res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
-  res.json({ ok: true, videos: [], page, totalPages: 0, hasNextPage: false, hasPrevPage: false });
+  res.json(result);
 });
 
-// 3. Category Videos (Instant response from pre-verified fast catalog)
-app.get('/api/category/:slug', async (req, res) => {
+// 3. Category Videos (Serves direct MP4 KamaBaba library - 0 VPS bandwidth)
+app.get('/api/category/:slug', (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 20;
   const slug = req.params.slug;
-
-  const verified = getVerifiedCategory(slug, page, 20);
-  if (verified && verified.totalVideos > 0) {
-    res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=3600, stale-while-revalidate=86400');
-    return res.json(verified);
-  }
-
-  // Fallback: search verified catalog by slug keywords for 100% working results
-  const catalog = getLocalCatalog();
-  const matched = catalog.filter(v => 
-    (v.category && v.category.includes(slug)) || 
-    (v.title && v.title.toLowerCase().includes(slug.replace(/-/g, ' '))) ||
-    (v.url && v.url.toLowerCase().includes(slug.replace(/-/g, ' ')))
-  );
-  const limit = 20;
-  const start = (page - 1) * limit;
-  const slice = matched.slice(start, start + limit);
-  const totalPages = Math.ceil(matched.length / limit) || 1;
-
-  res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=3600, stale-while-revalidate=86400');
-  res.json({
-    ok: true,
-    category: slug,
-    page: Number(page),
-    totalPages,
-    totalVideos: matched.length,
-    hasNextPage: page < totalPages,
-    hasPrevPage: page > 1,
-    videos: slice.map((v, idx) => ({ ...v, title: v.title || `Video ${start + idx + 1}` }))
-  });
-});
-
-// 4. Search Videos (Instant search across 100% verified fast catalog)
-app.get('/api/search', async (req, res) => {
-  const query = (req.query.q || '').trim().toLowerCase();
-  const page = parseInt(req.query.page, 10) || 1;
-  if (!query) {
-    return res.status(400).json({ ok: false, error: 'Empty search query' });
-  }
-
-  const catalog = getLocalCatalog();
-  const terms = query.split(/\s+/);
-  const matched = catalog.filter(v => {
-    const text = `${v.title || ''} ${v.url || ''} ${v.category || ''}`.toLowerCase();
-    return terms.every(t => text.includes(t));
-  });
-
-  const limit = 20;
-  const start = (page - 1) * limit;
-  const slice = matched.slice(start, start + limit);
-  const totalPages = Math.ceil(matched.length / limit) || 1;
+  const result = getKmbCategory(slug, page, limit);
   res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
-  res.json({
-    ok: true,
-    query,
-    page: Number(page),
-    totalPages,
-    totalVideos: matched.length,
-    hasNextPage: page < totalPages,
-    hasPrevPage: page > 1,
-    videos: slice
-  });
+  res.json(result);
 });
 
-// 5. Get Direct Stream URL (Instant response from pre-verified catalog)
+// 4. Search Videos (Serves direct MP4 KamaBaba library - 0 VPS bandwidth)
+app.get('/api/search', (req, res) => {
+  const query = (req.query.q || '').trim();
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 20;
+  const result = searchKmbVideos(query, page, limit);
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
+  res.json(result);
+});
+
 app.get('/api/stream-info', async (req, res) => {
   const videoUrl = req.query.url;
   if (!videoUrl) {
@@ -419,169 +451,7 @@ app.get('/api/vmms/sync', (req, res) => {
   syncVmmsCatalog().catch(err => console.error('[VMMS Sync API Error]:', err.message));
 });
 
-// ==========================================
-// USERSPORN DIRECT MP4 ZERO-BANDWIDTH APIS
-// Fast, microsecond RAM responses, 0 VPS bandwidth
-// Multi-Quality Single-Token (360p - 1080p)
-// ==========================================
 
-// 1. UsersPorn Categories
-app.get('/api/up/categories', (req, res) => {
-  res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400');
-  res.json({ ok: true, categories: UP_CATEGORIES });
-});
-
-// 2. UsersPorn Browse (Instant RAM response with direct streamUrl & qualityUrls)
-app.get('/api/up/browse', (req, res) => {
-  const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 20;
-  const result = getUpBrowse(page, limit);
-  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
-  res.json(result);
-});
-
-// 3. UsersPorn Category
-app.get('/api/up/category/:slug', (req, res) => {
-  const slug = req.params.slug;
-  const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 20;
-  const result = getUpCategory(slug, page, limit);
-  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
-  res.json(result);
-});
-
-// 4. UsersPorn Search
-app.get('/api/up/search', (req, res) => {
-  const query = req.query.q || '';
-  const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 20;
-  const result = searchUpVideos(query, page, limit);
-  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
-  res.json(result);
-});
-
-// 5. UsersPorn Stream Info (0ms fast path for hot items, on-demand lazy resolution for cold items)
-app.get('/api/up/stream-info', async (req, res) => {
-  const id = req.query.id || req.query.rawId;
-  const force = req.query.force === '1' || req.query.force === 'true';
-  if (!id) return res.status(400).json({ ok: false, error: 'Missing id' });
-
-  try {
-    const video = await getOrResolveUpStream(id, force);
-    if (video && video.streamUrl) {
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      return res.json({
-        ok: true,
-        type: 'mp4',
-        id: video.id,
-        rawId: video.rawId,
-        streamUrl: video.streamUrl,
-        rawUrl: video.streamUrl,
-        qualityUrls: video.qualityUrls,
-        qualities: video.qualities,
-        defaultQuality: video.defaultQuality,
-        expiresAt: video.expiresAt,
-        poster: video.poster,
-        thumb: video.thumb,
-        title: video.title
-      });
-    }
-    res.status(404).json({ ok: false, error: 'Video stream could not be resolved' });
-  } catch (err) {
-    console.error('[UsersPorn Stream Info Error]:', err.message);
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
-// 6. UsersPorn Background Sync Trigger
-app.get('/api/up/sync', (req, res) => {
-  if (isUpSyncing()) {
-    return res.json({ ok: false, message: 'Sync already in progress' });
-  }
-  const pages = parseInt(req.query.pages, 10) || 3;
-  res.json({ ok: true, message: `Sync initiated in background for ${pages} pages` });
-  syncUpCatalog(pages).catch(err => console.error('[UsersPorn Sync API Error]:', err.message));
-});
-
-// ==========================================
-// CUMLOUDER HYBRID DUAL-ENGINE ZERO-BANDWIDTH APIS
-// Native MP4 (0ms) + Embed Fallback (0ms), 0 VPS Bandwidth
-// ==========================================
-
-// 1. Cumlouder Categories
-app.get('/api/cl/categories', (req, res) => {
-  res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400');
-  res.json({ ok: true, categories: CL_CATEGORIES });
-});
-
-// 2. Cumlouder Browse (Instant RAM response with streamUrl/embedUrl)
-app.get('/api/cl/browse', (req, res) => {
-  const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 20;
-  const result = getClBrowse(page, limit);
-  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
-  res.json(result);
-});
-
-// 3. Cumlouder Category
-app.get('/api/cl/category/:slug', (req, res) => {
-  const slug = req.params.slug;
-  const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 20;
-  const result = getClCategory(slug, page, limit);
-  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
-  res.json(result);
-});
-
-// 4. Cumlouder Search
-app.get('/api/cl/search', (req, res) => {
-  const query = req.query.q || '';
-  const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 20;
-  const result = searchClVideos(query, page, limit);
-  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
-  res.json(result);
-});
-
-// 5. Cumlouder Stream Info (Fast path for hot items, lazy on-demand resolver for cold items)
-app.get('/api/cl/stream-info', async (req, res) => {
-  const id = req.query.id || req.query.slug;
-  const force = req.query.force === '1' || req.query.force === 'true';
-  if (!id) return res.status(400).json({ ok: false, error: 'Missing id or slug' });
-
-  try {
-    const video = await getOrResolveClStream(id, force);
-    if (video && (video.streamUrl || video.embedUrl)) {
-      res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400');
-      return res.json({
-        ok: true,
-        type: 'mp4',
-        id: video.id,
-        slug: video.slug,
-        numericId: video.numericId,
-        streamUrl: video.streamUrl || '',
-        embedUrl: video.embedUrl || (video.numericId ? `https://www.cumlouder.com/embed/${video.numericId}/` : ''),
-        poster: video.poster || video.thumb,
-        thumb: video.thumb,
-        title: video.title
-      });
-    }
-    res.status(404).json({ ok: false, error: 'Video stream could not be resolved' });
-  } catch (err) {
-    console.error('[Cumlouder Stream Info Error]:', err.message);
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
-// 6. Cumlouder Background Sync Trigger
-app.get('/api/cl/sync', (req, res) => {
-  if (isClSyncing()) {
-    return res.json({ ok: false, message: 'Sync already in progress' });
-  }
-  const pages = parseInt(req.query.pages, 10) || 5;
-  res.json({ ok: true, message: `Sync initiated in background for ${pages} pages` });
-  syncClCatalog(pages).catch(err => console.error('[Cumlouder Sync API Error]:', err.message));
-});
 
 
 // ==========================================
@@ -613,57 +483,7 @@ app.get('/api/ut/search', (req, res) => {
   res.json(result);
 });
 
-// 4. Upskirt Stream Info (Fast path from RAM + Instant API resolution via POST api.upskirt.tv/hls)
-app.get('/api/ut/stream-info', async (req, res) => {
-  const id = req.query.id || req.query.numericId;
-  const force = req.query.force === '1' || req.query.force === 'true';
-  if (!id) return res.status(400).json({ ok: false, error: 'Missing id or numericId' });
-
-  try {
-    const video = await getOrResolveUtStream(id, force);
-    if (video && video.streamUrl) {
-      res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400');
-      return res.json({
-        ok: true,
-        type: 'mp4',
-        id: video.id,
-        numericId: video.numericId,
-        slug: video.slug,
-        streamUrl: video.streamUrl,
-        mp4_1080: video.mp4_1080 || '',
-        mp4_480: video.mp4_480 || '',
-        master: video.master || '',
-        mp4List: video.mp4List || [],
-        thumb: video.thumb || '',
-        preview: video.preview || '',
-        duration: video.duration || '',
-        title: video.title || ''
-      });
-    }
-    res.status(404).json({ ok: false, error: 'Video stream could not be resolved' });
-  } catch (err) {
-    console.error('[Upskirt Stream Info Error]:', err.message);
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
-// 5. Upskirt Background Sync Trigger
-app.get('/api/ut/sync', (req, res) => {
-  if (isUtSyncing()) {
-    return res.json({ ok: false, message: 'Sync already in progress' });
-  }
-  const pages = parseInt(req.query.pages, 10) || 5;
-  res.json({ ok: true, message: `Sync initiated in background for ${pages} pages` });
-  syncUtCatalog(pages).catch(err => console.error('[Upskirt Sync API Error]:', err.message));
-});
-
-// 7. Resilient In-Memory Thumbnail Proxy
-// Bypasses Indian ISP DNS blocks and third-party image proxy bans
-const thumbCache = new Map();
-
-
-
-class DpiSplitterThumb extends Transform {
+class DpiSplitterStream extends Transform {
   constructor() {
     super();
     this.first = true;
@@ -683,29 +503,541 @@ class DpiSplitterThumb extends Transform {
   }
 }
 
-function fetchCumlouderThumbDpi(hostname, pathname) {
-  return new Promise((resolve, reject) => {
-    const raw = net.connect(443, '79.127.138.15', () => {
-      const splitter = new DpiSplitterThumb();
-      splitter.pipe(raw);
-      const duplex = new Duplex({ read() {}, write(c, e, cb) { splitter.write(c, e, cb); } });
-      raw.on('data', c => duplex.push(c));
-      const t = tls.connect({ socket: duplex, servername: hostname, rejectUnauthorized: false }, () => {
-        t.write(`GET ${pathname} HTTP/1.1\r\nHost: ${hostname}\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\nConnection: close\r\n\r\n`);
-      });
-      const chunks = [];
-      t.on('data', c => chunks.push(c));
-      t.on('end', () => {
-        const buf = Buffer.concat(chunks);
-        const idx = buf.indexOf('\r\n\r\n');
-        resolve(idx !== -1 ? buf.slice(idx + 4) : buf);
-      });
-      t.on('error', reject);
-    });
-    raw.setTimeout(6000, () => { raw.destroy(); reject(new Error('timeout')); });
-    raw.on('error', reject);
+const UT_STREAM_IPS = [
+  '79.127.138.15', '79.127.138.28', '79.127.138.21', '79.127.138.18',
+  '79.127.235.9', '79.127.213.228', '79.127.235.3', '79.127.235.5'
+];
+
+// In-Memory Token Vault: Max 5,000 items (~1.5 MB RAM total)
+const utTokenVault = new Map();
+
+function setUtTokenInVault(numericId, streamUrl, expiresAt) {
+  if (utTokenVault.size > 5000) {
+    const firstKey = utTokenVault.keys().next().value;
+    utTokenVault.delete(firstKey);
+  }
+  utTokenVault.set(String(numericId), {
+    streamUrl,
+    expiresAt: expiresAt || (Math.floor(Date.now() / 1000) + 7000)
   });
 }
+
+function getUtTokenFromVault(numericId) {
+  const entry = utTokenVault.get(String(numericId));
+  if (!entry) return null;
+  const now = Math.floor(Date.now() / 1000);
+  if (entry.expiresAt && (entry.expiresAt - now < 180)) {
+    utTokenVault.delete(String(numericId));
+    return null; // Expiring soon, renew fresh
+  }
+  return entry.streamUrl;
+}
+
+// Background Pre-Warm Endpoint: 0ms Click-to-Play
+app.get('/api/ut/prewarm', async (req, res) => {
+  const numericId = (req.query.id || req.query.numericId || '').replace(/^ut-/, '');
+  if (!numericId) return res.json({ ok: false });
+
+  const cached = getUtTokenFromVault(numericId);
+  if (cached) return res.json({ ok: true, cached: true });
+
+  try {
+    const video = await getOrResolveUtStream(numericId);
+    const upstreamUrl = (video && video.upstreamUrl && video.upstreamUrl.startsWith('http'))
+      ? video.upstreamUrl
+      : (video && video.streamUrl && video.streamUrl.startsWith('http') ? video.streamUrl : null);
+    if (upstreamUrl) {
+      setUtTokenInVault(numericId, upstreamUrl, video.expiresAt);
+      return res.json({ ok: true, prewarmed: true });
+    }
+  } catch (_) {}
+  res.json({ ok: false });
+});
+
+// 4. Upskirt Stream Info (Provides permanent virtual URLs + quality switches)
+app.get('/api/ut/stream-info', async (req, res) => {
+  const id = req.query.id || req.query.numericId;
+  const force = req.query.force === '1' || req.query.force === 'true';
+  if (!id) return res.status(400).json({ ok: false, error: 'Missing id or numericId' });
+
+  const cleanNumeric = String(id).replace(/^ut-/, '');
+  const permanentStreamUrl = `/api/ut/stream/${cleanNumeric}.mp4`;
+
+  try {
+    const video = await getOrResolveUtStream(cleanNumeric, force);
+    const upstreamUrl = (video && video.upstreamUrl && video.upstreamUrl.startsWith('http'))
+      ? video.upstreamUrl
+      : (video && video.streamUrl && video.streamUrl.startsWith('http') ? video.streamUrl : null);
+    if (upstreamUrl) {
+      setUtTokenInVault(cleanNumeric, upstreamUrl, video.expiresAt);
+    }
+    if (video) {
+
+      const qualityUrls = {
+        '1080p': `/api/ut/stream/${cleanNumeric}.mp4?q=1080`,
+        '480p': `/api/ut/stream/${cleanNumeric}.mp4?q=480`
+      };
+
+      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
+      return res.json({
+        ok: true,
+        type: 'mp4',
+        id: video.id || `ut-${cleanNumeric}`,
+        numericId: cleanNumeric,
+        slug: video.slug || '',
+        streamUrl: permanentStreamUrl,
+        directStreamUrl: permanentStreamUrl,
+        qualityUrls,
+        defaultQuality: '1080p',
+        master: video.master || '',
+        thumb: video.thumb || '',
+        preview: video.preview || '',
+        duration: video.duration || '',
+        title: video.title || '',
+        expiresAt: video.expiresAt
+      });
+    }
+
+    // Fallback: Return permanent virtual stream URL regardless
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return res.json({
+      ok: true,
+      type: 'mp4',
+      id: `ut-${cleanNumeric}`,
+      numericId: cleanNumeric,
+      streamUrl: permanentStreamUrl,
+      directStreamUrl: permanentStreamUrl
+    });
+  } catch (err) {
+    console.error('[Upskirt Stream Info Error]:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Permanent Streaming Proxy: Zero-RAM backpressure pipe + auto-healing
+app.get(['/api/ut/stream/:id.mp4', '/api/ut/stream/:id', '/api/ut/stream'], async (req, res) => {
+  const numericId = (req.params.id || req.query.id || req.query.numericId || '').replace(/^ut-/, '').replace(/\.mp4$/, '');
+  let targetUrl = req.query.url;
+
+  if (!targetUrl && numericId) {
+    targetUrl = getUtTokenFromVault(numericId);
+    if (!targetUrl) {
+      try {
+        const video = await getOrResolveUtStream(numericId);
+        const resolvedUpstream = (video && video.upstreamUrl && video.upstreamUrl.startsWith('http'))
+          ? video.upstreamUrl
+          : (video && video.streamUrl && video.streamUrl.startsWith('http') ? video.streamUrl : null);
+        if (resolvedUpstream) {
+          targetUrl = resolvedUpstream;
+          setUtTokenInVault(numericId, resolvedUpstream, video.expiresAt);
+        }
+      } catch (e) {
+        return res.status(502).send('Error resolving video stream');
+      }
+    }
+  }
+
+  if (!targetUrl) {
+    return res.status(404).send('Stream URL not found');
+  }
+
+  const streamFromUpstream = (videoUrl, isRetry = false) => {
+    try {
+      const parsed = new URL(videoUrl);
+      const ip = UT_STREAM_IPS[Math.floor(Math.random() * UT_STREAM_IPS.length)];
+
+      let clientDisconnected = false;
+      let raw = null;
+      let tlsSocket = null;
+
+      const cleanup = () => {
+        try { if (tlsSocket) tlsSocket.destroy(); } catch (_) {}
+        try { if (raw) raw.destroy(); } catch (_) {}
+      };
+
+      // VPS Bandwidth Guard: If client closes tab or pauses, instantly kill upstream connection!
+      req.on('close', () => {
+        clientDisconnected = true;
+        cleanup();
+      });
+
+      raw = net.connect(443, ip, () => {
+        if (clientDisconnected) return cleanup();
+        const splitter = new DpiSplitterStream();
+        splitter.pipe(raw);
+        const duplex = new Duplex({ read() {}, write(c, e, cb) { splitter.write(c, e, cb); } });
+        raw.on('data', c => duplex.push(c));
+        raw.on('end', () => duplex.push(null));
+
+        tlsSocket = tls.connect({ socket: duplex, servername: parsed.hostname, rejectUnauthorized: false }, () => {
+          if (clientDisconnected) return cleanup();
+          let reqHeaders = `${req.method} ${parsed.pathname}${parsed.search} HTTP/1.1\r\n` +
+            `Host: ${parsed.hostname}\r\n` +
+            `User-Agent: ${USER_AGENT}\r\n` +
+            `Referer: https://upskirt.tv/\r\n` +
+            `Origin: https://upskirt.tv\r\n` +
+            `Connection: close\r\n`;
+          if (req.headers.range) {
+            reqHeaders += `Range: ${req.headers.range}\r\n`;
+          }
+          reqHeaders += '\r\n';
+          tlsSocket.write(reqHeaders);
+        });
+
+        let headerParsed = false;
+        let leftover = Buffer.alloc(0);
+
+        tlsSocket.on('data', chunk => {
+          if (clientDisconnected) return cleanup();
+          if (!headerParsed) {
+            leftover = Buffer.concat([leftover, chunk]);
+            const idx = leftover.indexOf('\r\n\r\n');
+            if (idx !== -1) {
+              headerParsed = true;
+              const headerStr = leftover.slice(0, idx).toString('utf-8');
+              const bodyChunk = leftover.slice(idx + 4);
+              const firstLine = headerStr.split('\r\n')[0];
+              const statusCode = parseInt(firstLine.split(' ')[1], 10) || 200;
+
+              // Auto-Healing Shield: If token expired upstream (403), re-resolve fresh and resume!
+              if (statusCode === 403 && !isRetry && numericId) {
+                cleanup();
+                return getOrResolveUtStream(numericId, true).then(fresh => {
+                  const freshUpstream = (fresh && fresh.upstreamUrl && fresh.upstreamUrl.startsWith('http'))
+                    ? fresh.upstreamUrl
+                    : (fresh && fresh.streamUrl && fresh.streamUrl.startsWith('http') ? fresh.streamUrl : null);
+                  if (freshUpstream) {
+                    setUtTokenInVault(numericId, freshUpstream, fresh.expiresAt);
+                    streamFromUpstream(freshUpstream, true);
+                  } else {
+                    if (!res.headersSent) res.status(403).send('Stream token expired');
+                  }
+                }).catch(() => {
+                  if (!res.headersSent) res.status(403).send('Stream token expired');
+                });
+              }
+
+              res.status(statusCode);
+              res.setHeader('Access-Control-Allow-Origin', '*');
+              res.setHeader('Access-Control-Allow-Headers', '*');
+              res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+              res.setHeader('Accept-Ranges', 'bytes');
+
+              headerStr.split('\r\n').slice(1).forEach(line => {
+                const colon = line.indexOf(':');
+                if (colon !== -1) {
+                  const k = line.slice(0, colon).trim().toLowerCase();
+                  const v = line.slice(colon + 1).trim();
+                  if (['content-type', 'content-length', 'content-range', 'cache-control'].includes(k)) {
+                    res.setHeader(k, v);
+                  }
+                }
+              });
+
+              if (bodyChunk.length > 0) {
+                const ok = res.write(bodyChunk);
+                if (!ok) {
+                  tlsSocket.pause();
+                  res.once('drain', () => tlsSocket.resume());
+                }
+              }
+            }
+          } else {
+            // RAM Guard: Backpressure streaming ensures Node memory never exceeds ~64KB per stream!
+            const ok = res.write(chunk);
+            if (!ok) {
+              tlsSocket.pause();
+              res.once('drain', () => tlsSocket.resume());
+            }
+          }
+        });
+
+        tlsSocket.on('end', () => res.end());
+        tlsSocket.on('error', () => { if (!res.headersSent) res.status(502).send('Error proxying video'); });
+      });
+
+      raw.on('error', () => { if (!res.headersSent) res.status(502).send('Stream connection failed'); });
+      raw.setTimeout(12000, () => {
+        cleanup();
+        if (!res.headersSent) res.status(504).send('Stream gateway timeout');
+      });
+    } catch (e) {
+      if (!res.headersSent) res.status(400).send('Invalid stream request');
+    }
+  };
+
+  streamFromUpstream(targetUrl);
+});
+
+app.get('/api/ut/sync', (req, res) => {
+  if (isUtSyncing()) {
+    return res.json({ ok: false, message: 'Sync already in progress' });
+  }
+  const pages = parseInt(req.query.pages, 10) || 5;
+  res.json({ ok: true, message: `Sync initiated in background for ${pages} pages` });
+  syncUtCatalog(pages).catch(err => console.error('[Upskirt Sync API Error]:', err.message));
+});
+
+// ==========================================
+// SEXKBJ (KOREAN BJ) ENDPOINTS
+// ==========================================
+
+// 1. Categories
+app.get('/api/skbj/categories', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400');
+  res.json({ ok: true, categories: SKBJ_CATEGORIES });
+});
+
+// 2. Browse
+app.get('/api/skbj/browse', (req, res) => {
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 20;
+  const result = getSkbjBrowse(page, limit);
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
+  res.json(result);
+});
+
+// 3. Category
+app.get('/api/skbj/category/:slug', (req, res) => {
+  const slug = req.params.slug;
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 20;
+  const result = getSkbjCategory(slug, page, limit);
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
+  res.json(result);
+});
+
+// 4. Search
+app.get('/api/skbj/search', (req, res) => {
+  const query = req.query.q || '';
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 20;
+  const result = searchSkbjVideos(query, page, limit);
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800, stale-while-revalidate=86400');
+  res.json(result);
+});
+
+// 5. Stream Info
+app.get('/api/skbj/stream-info', (req, res) => {
+  const id = req.query.id;
+  const video = id && getSkbjVideoById(id);
+  if (video && (video.directStreamUrl || video.streamUrl)) {
+    res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400');
+    return res.json({
+      ok: true,
+      type: 'mp4',
+      streamUrl: video.directStreamUrl || video.streamUrl,
+      fallbackUrl: video.streamUrl,
+      poster: video.poster,
+      thumb: video.thumb,
+      title: video.title
+    });
+  }
+  res.status(404).json({ ok: false, error: 'Video not found in SexKbj catalog' });
+});
+
+// ==========================================
+// UNIFIED CINEMA FULL-VIDEO APIS
+// Combines KamaBaba, ViralMMS, SexKbj, Upskirt
+// ==========================================
+
+const handleCinemaFeed = (req, res) => {
+  const isPost = req.method === 'POST';
+  const body = req.body || {};
+  const query = req.query || {};
+
+  const source = (isPost ? body.source : query.source) || 'all';
+  const page = parseInt(isPost ? body.page : query.page, 10) || 1;
+  const limit = parseInt(isPost ? body.limit : query.limit, 10) || 20;
+
+  if (source === 'viralmms') return res.json(getVmmsBrowse(page, limit));
+  if (source === 'kamababa') return res.json(getKmbBrowse(page, limit));
+  if (source === 'skbj') return res.json(getSkbjBrowse(page, limit));
+  if (source === 'upskirt') return res.json(getUtBrowse(page, limit));
+  if (source === 'pornbusy' || source === 'western') return res.json(getPbBrowse(page, limit));
+
+  const topTags = isPost ? (body.topTags || {}) : {};
+  const recentSeenIds = isPost ? (body.recentSeenIds || []) : (query.seenIds ? query.seenIds.split(',') : []);
+  const recentTags = isPost ? (body.recentTags || []) : [];
+
+  const result = cinemaRecommender.getPersonalizedHomeFeed({
+    page,
+    limit,
+    topTags,
+    recentSeenIds,
+    recentTags
+  });
+
+  res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=300');
+  res.json(result);
+};
+
+app.get('/api/cinema/feed', handleCinemaFeed);
+app.post('/api/cinema/feed', handleCinemaFeed);
+
+app.post('/api/cinema/telemetry', (req, res) => {
+  try {
+    const events = Array.isArray(req.body?.events) ? req.body.events : (req.body ? [req.body] : []);
+    const count = cinemaRecommender.recordCinemaTelemetry(events);
+    res.json({ ok: true, processed: count });
+  } catch (err) {
+    console.error('[Cinema Telemetry Error]:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.get('/api/cinema/category/:slug', (req, res) => {
+  const slug = req.params.slug;
+  const source = req.query.source || 'all';
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 20;
+
+  if (source === 'pornbusy' || source === 'western') {
+    return res.json(getPbCategory(slug, page, limit));
+  }
+
+  const kmbRes = getKmbCategory(slug, page, 15);
+  const vmmsRes = getVmmsCategory(slug, page, 5);
+
+  const kmb = (kmbRes.videos || []).map(v => ({ ...v, sourceName: 'KamaBaba', source: 'kamababa' }));
+  const vmms = (vmmsRes.videos || []).map(v => ({ ...v, sourceName: 'ViralMMS', source: 'viralmms' }));
+
+  const combined = [];
+  let k = 0, v = 0;
+  while (k < kmb.length || v < vmms.length) {
+    if (k < kmb.length) combined.push(kmb[k++]);
+    if (k < kmb.length) combined.push(kmb[k++]);
+    if (k < kmb.length) combined.push(kmb[k++]);
+    if (v < vmms.length) combined.push(vmms[v++]);
+  }
+
+  const total = (kmbRes.total || 0) + (vmmsRes.total || 0);
+
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800');
+  res.json({
+    ok: true,
+    category: slug,
+    page,
+    limit,
+    total,
+    totalPages: Math.ceil(total / limit) || 1,
+    source: 'all',
+    videos: combined
+  });
+});
+
+app.get('/api/cinema/search', (req, res) => {
+  const query = req.query.q || '';
+  const source = req.query.source || 'all';
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 20;
+
+  if (source === 'viralmms') {
+    return res.json(searchVmmsVideos(query, page, limit));
+  } else if (source === 'kamababa') {
+    return res.json(searchKmbVideos(query, page, limit));
+  } else if (source === 'skbj') {
+    return res.json(searchSkbjVideos(query, page, limit));
+  } else if (source === 'upskirt') {
+    return res.json(searchUtVideos(query, page, limit));
+  } else if (source === 'pornbusy' || source === 'western') {
+    return res.json(searchPbVideos(query, page, limit));
+  }
+
+  // Cross-provider unified search without artificial truncation
+  const utRes = (typeof searchUtVideos === 'function') ? (searchUtVideos(query, 1, 99999).videos || []) : [];
+  const kmbRes = (typeof searchKmbVideos === 'function') ? (searchKmbVideos(query, 1, 99999).videos || []) : [];
+  const vmmsRes = (typeof searchVmmsVideos === 'function') ? (searchVmmsVideos(query, 1, 99999).videos || []) : [];
+  const pbRes = (typeof searchPbVideos === 'function') ? (searchPbVideos(query, 1, 99999).videos || []) : [];
+  const skbjRes = (typeof searchSkbjVideos === 'function') ? (searchSkbjVideos(query, 1, 99999).videos || []) : [];
+
+  const merged = [
+    ...utRes.map(v => ({ ...v, sourceName: 'UPSKIRT HD', source: 'upskirt' })),
+    ...kmbRes.map(v => ({ ...v, sourceName: 'KamaBaba', source: 'kamababa' })),
+    ...vmmsRes.map(v => ({ ...v, sourceName: 'ViralMMS', source: 'viralmms' })),
+    ...pbRes.map(v => ({ ...v, sourceName: 'WESTERN HD', source: 'pornbusy' })),
+    ...skbjRes.map(v => ({ ...v, sourceName: 'SexKbj', source: 'skbj' }))
+  ];
+
+  const total = merged.length;
+  const totalPages = Math.ceil(total / limit) || 1;
+  const start = (page - 1) * limit;
+  const slice = merged.slice(start, start + limit);
+
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=1800');
+  res.json({
+    ok: true,
+    query,
+    page,
+    limit,
+    total,
+    totalPages,
+    hasMore: (page * limit) < total,
+    videos: slice
+  });
+});
+
+// Dedicated PornBusy Western Endpoints
+app.get('/api/pornbusy/categories', (req, res) => {
+  res.json({ ok: true, categories: PB_CATEGORIES.map(c => ({ name: c.charAt(0).toUpperCase() + c.slice(1), slug: c })) });
+});
+app.get('/api/pornbusy/browse', (req, res) => {
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 20;
+  res.json(getPbBrowse(page, limit));
+});
+app.get('/api/pornbusy/category/:slug', (req, res) => {
+  const slug = req.params.slug;
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 20;
+  res.json(getPbCategory(slug, page, limit));
+});
+app.get('/api/pornbusy/search', (req, res) => {
+  const query = req.query.q || '';
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 20;
+  res.json(searchPbVideos(query, page, limit));
+});
+
+app.get('/api/cinema/related', (req, res) => {
+  const currentId = req.query.id || '';
+  const limit = Math.min(24, Math.max(4, parseInt(req.query.limit, 10) || 12));
+  const sessionSeenIds = req.query.seenIds ? req.query.seenIds.split(',') : [];
+
+  let currentVideo = null;
+  if (typeof getKmbVideoById === 'function') currentVideo = getKmbVideoById(currentId);
+  if (!currentVideo && typeof getVmmsVideoById === 'function') currentVideo = getVmmsVideoById(currentId);
+  if (!currentVideo && typeof getPbVideoById === 'function') currentVideo = getPbVideoById(currentId);
+  if (!currentVideo && typeof getSkbjVideoById === 'function') currentVideo = getSkbjVideoById(currentId);
+
+  if (!currentVideo) {
+    currentVideo = {
+      id: currentId,
+      category: req.query.category || '',
+      title: req.query.title || '',
+      tags: [req.query.category].filter(Boolean)
+    };
+  }
+
+  const results = cinemaRecommender.getRelatedVideos(currentVideo, {
+    limit,
+    sessionSeenIds
+  });
+
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=600');
+  res.json({
+    ok: true,
+    currentId,
+    count: results.length,
+    videos: results
+  });
+});
+
+// 7. Resilient In-Memory Thumbnail Proxy
+// Bypasses Indian ISP DNS blocks and third-party image proxy bans
+const thumbCache = new Map();
+
+
 
 app.get('/api/thumb', async (req, res) => {
   const imageUrl = req.query.url;
@@ -720,23 +1052,24 @@ app.get('/api/thumb', async (req, res) => {
     return res.send(cached.data);
   }
 
-  // Cumlouder CDN77 DPI Bypass Shield (supports th0cdn.cumlouder.com and im0.imgcm.com)
-  if (imageUrl.includes('cumlouder.com') || imageUrl.includes('th0cdn') || imageUrl.includes('imgcm.com')) {
+  // Upskirt DPI Bypass Shield for pix.upskirt.tv (bypasses ISP middlebox ECONNRESET)
+  if (imageUrl.includes('pix.upskirt.tv') || imageUrl.includes('upskirt.tv')) {
     try {
-      const parsed = new URL(imageUrl);
-      const buffer = await fetchCumlouderThumbDpi(parsed.hostname, parsed.pathname);
-      if (buffer && buffer.length > 500) {
+      const result = await fetchPixDpi(imageUrl);
+      if (result && result.data && result.data.length > 200) {
         if (thumbCache.size > 1000) {
           const firstKey = thumbCache.keys().next().value;
           thumbCache.delete(firstKey);
         }
-        thumbCache.set(imageUrl, { data: buffer, contentType: 'image/jpeg' });
-        res.setHeader('Content-Type', 'image/jpeg');
+        thumbCache.set(imageUrl, result);
+        res.setHeader('Content-Type', result.contentType || 'image/jpeg');
         res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
-        return res.send(buffer);
+        return res.send(result.data);
       }
-    } catch (e) {
-      // Fall through to standard proxy
+    } catch (err) {
+      console.warn('[Pix DPI Error]:', err.message);
+      res.setHeader('Content-Type', 'image/svg+xml');
+      return res.send('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180"><rect width="100%" height="100%" fill="#18181b"/><text x="50%" y="50%" fill="#71717a" font-family="sans-serif" font-size="14" text-anchor="middle" dominant-baseline="middle">Upskirt Preview</text></svg>');
     }
   }
 
@@ -808,180 +1141,10 @@ function setLivePlaylistCache(key, data, ttlMs = 3600000) {
   livePlaylistCache.set(key, { data, expiresAt: Date.now() + ttlMs });
 }
 
-app.get('/api/live.m3u8', async (req, res) => {
-  const masterUrl = req.query.url;
-  if (!masterUrl) return res.status(400).send('Missing url');
+// Desi52 / Plauymito HLS proxy removed to protect VPS bandwidth
+app.get('/api/live.m3u8', (req, res) => res.status(404).send('Desi52 HLS proxy disabled to preserve VPS bandwidth'));
+app.get('/api/chunk', (req, res) => res.status(404).send('HLS chunk proxy disabled to preserve VPS bandwidth'));
 
-  const isIOS = req.query.ios === '1' || /iPhone|iPad|iPod/i.test(req.headers['user-agent'] || '');
-  const cacheKey = `${masterUrl}:${isIOS ? 'ios' : 'direct'}`;
-
-  const cached = livePlaylistCache.get(cacheKey);
-  if (cached && Date.now() < cached.expiresAt) {
-    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400');
-    return res.send(cached.data);
-  }
-
-  const fetchText = async (targetUrl) => {
-    try {
-      const parsed = new URL(targetUrl);
-      const isLulu = parsed.hostname.includes('tnmr.org') || parsed.hostname.includes('lulu');
-      const customRef = req.query.ref;
-      const referer = customRef || (isLulu ? 'https://luluvido.com/' : 'https://playmate.to/');
-      const origin = referer.replace(/\/$/, '');
-
-      return await httpGet(targetUrl, {
-        'Referer': referer,
-        'Origin': origin,
-        'Accept': '*/*'
-      }, 7000);
-    } catch (e) {
-      console.error('[fetchText error]:', e.message);
-      return '';
-    }
-  };
-
-  try {
-    const masterData = await fetchText(masterUrl);
-    if (!masterData || !masterData.includes('#EXTM3U')) {
-      console.error('[live.m3u8] masterData invalid or empty, len:', (masterData || '').length);
-      return res.status(502).send('Invalid playlist from upstream host');
-    }
-    
-    // Check if master playlist points to a subplaylist (e.g. index_avc_1280p.txt)
-    // Only search for subplaylists if the playlist does NOT already contain media segments
-    let finalPlaylist = masterData;
-    let basePlaylistUrl = masterUrl;
-
-    if (!masterData.includes('#EXTINF')) {
-      const lines = masterData.split('\n');
-      const subLine = lines.find(line => {
-        const trimmed = line.trim();
-        return trimmed && !trimmed.startsWith('#') && (trimmed.includes('.m3u8') || trimmed.includes('.txt'));
-      });
-
-      if (subLine) {
-        const subUrl = new URL(subLine.trim(), masterUrl).toString();
-        const subData = await fetchText(subUrl);
-        if (subData.includes('#EXTINF')) {
-          finalPlaylist = subData;
-          basePlaylistUrl = subUrl;
-        }
-      }
-    }
-
-    const isLuluStream = basePlaylistUrl.includes('tnmr.org') || basePlaylistUrl.includes('lulu');
-    const customRef = req.query.ref;
-    const streamReferer = customRef || (isLuluStream ? 'https://luluvido.com/' : 'https://playmate.to/');
-
-    // Rewrite all segment lines and AES keys:
-    // For AES-128: route key through /api/key so it is fetched with matching UA & Referer
-    // For Lulu or iOS: route TS segments through /api/chunk to inject matching UA / Referer / video/mp2t MIME
-    // For Playmate on PC/Android: direct CDN URLs for zero server bandwidth
-    const rewritten = finalPlaylist.split('\n').map(line => {
-      const trimmed = line.trim();
-      if (!trimmed) return line;
-
-      // Handle AES-128 key URI
-      if (trimmed.startsWith('#EXT-X-KEY')) {
-        return trimmed.replace(/URI=["']([^"']+)["']/, (match, uri) => {
-          const fullKeyUrl = new URL(uri, basePlaylistUrl).toString();
-          return `URI="/api/key?url=${encodeURIComponent(fullKeyUrl)}&ref=${encodeURIComponent(streamReferer)}"`;
-        });
-      }
-
-      if (!trimmed.startsWith('#')) {
-        const fullSegUrl = new URL(trimmed, basePlaylistUrl).toString();
-        // Playmate & non-Lulu streams have full CORS: * support.
-        // On non-iOS devices, stream directly from CDN for 0 VPS bandwidth & 0 latency!
-        if (!isLuluStream && !isIOS) {
-          return fullSegUrl;
-        }
-        return `/api/chunk?url=${encodeURIComponent(fullSegUrl)}&ref=${encodeURIComponent(streamReferer)}`;
-      }
-      return line;
-    }).join('\n');
-
-    setLivePlaylistCache(cacheKey, rewritten, 3600000);
-
-    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400');
-    res.send(rewritten);
-  } catch (err) {
-    console.error('[Playlist Error]:', err.message);
-    res.status(502).send('Error generating playlist');
-  }
-});
-
-// HLS Segment Proxy for Apple iOS Safari & LuluStream (Fixes fake MIME & UA binding)
-app.get('/api/chunk', (req, res) => {
-  const chunkUrl = req.query.url;
-  if (!chunkUrl) return res.status(400).send('Missing url');
-
-  try {
-    const parsed = new URL(chunkUrl);
-    const isLulu = parsed.hostname.includes('tnmr.org') || parsed.hostname.includes('lulu');
-    const customRef = req.query.ref;
-    const referer = customRef || (isLulu ? 'https://luluvido.com/' : 'https://playmate.to/');
-    const origin = referer.replace(/\/$/, '');
-
-    const headers = {
-      'User-Agent': USER_AGENT,
-      'Accept': '*/*',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Sec-Ch-Ua': '"Chromium";v="120", "Not(A:Brand";v="24", "Google Chrome";v="120"',
-      'Sec-Ch-Ua-Mobile': '?0',
-      'Sec-Ch-Ua-Platform': '"Windows"',
-      'Sec-Fetch-Dest': 'empty',
-      'Sec-Fetch-Mode': 'cors',
-      'Sec-Fetch-Site': 'cross-site',
-      'Referer': referer,
-      'Origin': origin
-    };
-    if (req.headers.range) {
-      headers['Range'] = req.headers.range;
-    }
-
-    const client = parsed.protocol === 'http:' ? http : https;
-    const agent = parsed.protocol === 'http:' ? proxyAgentHttp : proxyAgentHttps;
-    client.get({
-      protocol: parsed.protocol,
-      hostname: parsed.hostname,
-      port: parsed.port || (parsed.protocol === 'http:' ? 80 : 443),
-      path: parsed.pathname + parsed.search,
-      headers,
-      agent
-    }, upstreamRes => {
-      // Guard against corrupted upstream 1-byte chunks: return 404 so player auto-skips to next segment
-      const len = upstreamRes.headers['content-length'];
-      if (upstreamRes.statusCode === 206 && len === '1') {
-        return res.status(404).send('Corrupted upstream chunk');
-      }
-
-      res.status(upstreamRes.statusCode || 200);
-      res.setHeader('Content-Type', 'video/mp2t');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
-      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800, immutable');
-      if (upstreamRes.headers['content-range']) {
-        res.setHeader('Content-Range', upstreamRes.headers['content-range']);
-      }
-      if (upstreamRes.headers['content-length']) {
-        res.setHeader('Content-Length', upstreamRes.headers['content-length']);
-      }
-      upstreamRes.pipe(res);
-    }).on('error', err => {
-      console.error('[Chunk Proxy Error]:', err.message);
-      if (!res.headersSent) res.status(502).send('Error proxying chunk');
-    });
-  } catch (err) {
-    if (!res.headersSent) res.status(400).send('Invalid chunk URL');
-  }
-});
-
-// AES-128 Decryption Key Proxy (Ensures matching UA & Referer for HLS decryptor)
 app.get('/api/key', (req, res) => {
   const keyUrl = req.query.url;
   if (!keyUrl) return res.status(400).send('Missing url');
@@ -1027,33 +1190,7 @@ app.get('/api/key', (req, res) => {
   }
 });
 
-// 6. Thumbnail Proxy (Bypasses ISP image blocking & hotlink protection with 7-day Edge Cache)
-app.get('/api/thumb', (req, res) => {
-  const thumbUrl = req.query.url;
-  if (!thumbUrl) return res.status(400).send('Missing url');
 
-  try {
-    const parsed = new URL(thumbUrl);
-    https.get({
-      protocol: parsed.protocol,
-      hostname: parsed.hostname,
-      port: parsed.port || 443,
-      path: parsed.pathname + parsed.search,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://desi52.watch/'
-      }
-    }, imgRes => {
-      res.setHeader('Content-Type', imgRes.headers['content-type'] || 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800, immutable');
-      imgRes.pipe(res);
-    }).on('error', err => {
-      res.status(502).send('Error fetching thumbnail');
-    });
-  } catch (err) {
-    res.status(400).send('Invalid thumbnail URL');
-  }
-});
 
 // Telegram Bot Webhook Integration (Allows Bot to run on Vercel Serverless)
 app.post('/api/telegram-webhook', async (req, res) => {
@@ -1182,7 +1319,8 @@ if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`[Server] Streaming & Telegram Portal running on http://localhost:${PORT}`);
     startPolling();
-    startUpAutoRefresher();
-    startClAutoRefresher();
+    // Disabled expiring token refreshers per architectural mandate (Permanent CDNs only)
+    // startUpAutoRefresher();
+    // startClAutoRefresher();
   });
 }

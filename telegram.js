@@ -12,7 +12,9 @@ async function apiCall(method, body = {}) {
     });
     const data = await res.json();
     if (!data.ok) {
-      console.error(`[Telegram API Error] ${method}:`, data.description);
+      if (!data.description || !data.description.includes('Conflict')) {
+        console.error(`[Telegram API Error] ${method}:`, data.description);
+      }
     }
     return data;
   } catch (err) {

@@ -51,9 +51,6 @@ const sectionTitle = document.getElementById('current-section-title');
 const videoCount = document.getElementById('video-count');
 const tabKamaBaba = document.getElementById('tab-kamababa');
 const tabViralMMS = document.getElementById('tab-viralmms');
-const tabDesi52 = document.getElementById('tab-desi52');
-const tabUsersPorn = document.getElementById('tab-usersporn');
-const tabCumlouder = document.getElementById('tab-cumlouder');
 const tabUpskirt = document.getElementById('tab-upskirt');
 
 // Player Elements
@@ -106,7 +103,7 @@ qualityBtns.forEach(btn => {
 const API_BASE = window.API_BASE_URL || '';
 
 // ==========================================
-// 1. Source Switcher (KamaBaba vs ViralMMS vs Desi52 vs UsersPorn)
+// 1. Source Switcher (KamaBaba vs ViralMMS vs Desi52 vs Upskirt)
 // ==========================================
 function setSource(source) {
   if (currentSource === source) return;
@@ -120,14 +117,10 @@ function setSource(source) {
     sectionTitle.textContent = 'ViralMMS Releases';
   } else if (source === 'kamababa') {
     sectionTitle.textContent = 'KamaBaba Releases';
-  } else if (source === 'usersporn') {
-    sectionTitle.textContent = 'UsersPorn HD Releases';
-  } else if (source === 'cumlouder') {
-    sectionTitle.textContent = 'Cumlouder HD Releases';
   } else if (source === 'upskirt') {
     sectionTitle.textContent = 'Upskirt HD (1080p & Singapore CDN)';
   } else {
-    sectionTitle.textContent = 'Desi52 Releases';
+    sectionTitle.textContent = 'KamaBaba Releases';
   }
 
   currentCategory = '';
@@ -142,9 +135,6 @@ function setSource(source) {
 
 if (tabKamaBaba) tabKamaBaba.onclick = () => setSource('kamababa');
 if (tabViralMMS) tabViralMMS.onclick = () => setSource('viralmms');
-if (tabDesi52) tabDesi52.onclick = () => setSource('desi52');
-if (tabUsersPorn) tabUsersPorn.onclick = () => setSource('usersporn');
-if (tabCumlouder) tabCumlouder.onclick = () => setSource('cumlouder');
 if (tabUpskirt) tabUpskirt.onclick = () => setSource('upskirt');
 
 // ==========================================
@@ -157,10 +147,6 @@ async function loadCategories() {
       url = `${API_BASE}/api/kmb/categories`;
     } else if (currentSource === 'viralmms') {
       url = `${API_BASE}/api/vmms/categories`;
-    } else if (currentSource === 'usersporn') {
-      url = `${API_BASE}/api/up/categories`;
-    } else if (currentSource === 'cumlouder') {
-      url = `${API_BASE}/api/cl/categories`;
     } else if (currentSource === 'upskirt') {
       url = `${API_BASE}/api/ut/categories`;
     }
@@ -216,10 +202,6 @@ async function loadVideos(reset = false, targetPage = null) {
       apiUrl = `${API_BASE}/api/vmms/search?q=${encodeURIComponent(searchQuery)}&page=${currentPage}`;
     } else if (currentSource === 'kamababa') {
       apiUrl = `${API_BASE}/api/kmb/search?q=${encodeURIComponent(searchQuery)}&page=${currentPage}`;
-    } else if (currentSource === 'usersporn') {
-      apiUrl = `${API_BASE}/api/up/search?q=${encodeURIComponent(searchQuery)}&page=${currentPage}`;
-    } else if (currentSource === 'cumlouder') {
-      apiUrl = `${API_BASE}/api/cl/search?q=${encodeURIComponent(searchQuery)}&page=${currentPage}`;
     } else if (currentSource === 'upskirt') {
       apiUrl = `${API_BASE}/api/ut/search?q=${encodeURIComponent(searchQuery)}&page=${currentPage}`;
     } else {
@@ -231,10 +213,6 @@ async function loadVideos(reset = false, targetPage = null) {
       apiUrl = `${API_BASE}/api/vmms/category/${encodeURIComponent(currentCategory)}?page=${currentPage}`;
     } else if (currentSource === 'kamababa') {
       apiUrl = `${API_BASE}/api/kmb/category/${encodeURIComponent(currentCategory)}?page=${currentPage}`;
-    } else if (currentSource === 'usersporn') {
-      apiUrl = `${API_BASE}/api/up/category/${encodeURIComponent(currentCategory)}?page=${currentPage}`;
-    } else if (currentSource === 'cumlouder') {
-      apiUrl = `${API_BASE}/api/cl/category/${encodeURIComponent(currentCategory)}?page=${currentPage}`;
     } else if (currentSource === 'upskirt') {
       apiUrl = `${API_BASE}/api/ut/browse?category=${encodeURIComponent(currentCategory)}&page=${currentPage}`;
     } else {
@@ -245,10 +223,6 @@ async function loadVideos(reset = false, targetPage = null) {
       apiUrl = `${API_BASE}/api/vmms/browse?page=${currentPage}`;
     } else if (currentSource === 'kamababa') {
       apiUrl = `${API_BASE}/api/kmb/browse?page=${currentPage}`;
-    } else if (currentSource === 'usersporn') {
-      apiUrl = `${API_BASE}/api/up/browse?page=${currentPage}`;
-    } else if (currentSource === 'cumlouder') {
-      apiUrl = `${API_BASE}/api/cl/browse?page=${currentPage}`;
     } else if (currentSource === 'upskirt') {
       apiUrl = `${API_BASE}/api/ut/browse?page=${currentPage}`;
     } else {
@@ -385,9 +359,13 @@ function renderVideos(videos) {
       sourceImg = v.poster;
     }
 
-    // Primary Thumbnail: ALWAYS wsrv.nl edge CDN (0.00 KB VPS Bandwidth on normal page loads)
+    const isUpskirt = (sourceImg && (sourceImg.includes('pix.upskirt.tv') || sourceImg.includes('upskirt.tv'))) || v.source === 'upskirt';
+
+    // Primary Thumbnail: For Upskirt, ALWAYS direct to /api/thumb DPI proxy (wsrv.nl policy blocks upskirt.tv)
     let primaryThumb = '';
-    if (v.thumb && v.thumb.includes('wsrv.nl/?url=')) {
+    if (isUpskirt && sourceImg) {
+      primaryThumb = `${API_BASE}/api/thumb?url=${encodeURIComponent(sourceImg)}`;
+    } else if (v.thumb && v.thumb.includes('wsrv.nl/?url=')) {
       primaryThumb = v.thumb;
     } else if (sourceImg) {
       primaryThumb = `https://wsrv.nl/?url=${encodeURIComponent(sourceImg)}&w=480&output=webp`;
@@ -397,10 +375,10 @@ function renderVideos(videos) {
       primaryThumb = 'https://via.placeholder.com/320x180/202020/666666?text=Preview';
     }
 
-    // Fallback Thumbnail: ONLY loaded via onerror if wsrv.nl edge fails
-    const fallbackThumb = sourceImg 
-      ? `${API_BASE}/api/thumb?url=${encodeURIComponent(sourceImg)}` 
-      : '';
+    // Fallback Thumbnail: ONLY loaded via onerror if primary edge fails
+    const fallbackThumb = isUpskirt
+      ? 'https://via.placeholder.com/320x180/202020/666666?text=Upskirt+Preview'
+      : (sourceImg ? `${API_BASE}/api/thumb?url=${encodeURIComponent(sourceImg)}` : '');
 
     card.innerHTML = `
       <div class="card-thumb-wrap">
@@ -427,25 +405,19 @@ function renderVideos(videos) {
       </div>
     `;
 
-    // Instant Pre-Warm on hover / touchstart (cuts click-to-play wait time)
-    if (!v.streamUrl) {
-      const prewarm = () => {
-        if (!card.dataset.prewarmed) {
-          card.dataset.prewarmed = '1';
-          if (currentSource === 'desi52' && (v.url || v.postUrl)) {
-            fetch(`${API_BASE}/api/stream-info?url=${encodeURIComponent(v.url || v.postUrl)}`).catch(() => {});
-          } else if (currentSource === 'cumlouder' && (v.id || v.slug)) {
-            fetch(`${API_BASE}/api/cl/stream-info?id=${encodeURIComponent(v.id || v.slug)}`).catch(() => {});
-          } else if (currentSource === 'usersporn' && (v.id || v.rawId)) {
-            fetch(`${API_BASE}/api/up/stream-info?id=${encodeURIComponent(v.id || v.rawId)}`).catch(() => {});
-          } else if (currentSource === 'upskirt' && (v.id || v.numericId)) {
-            fetch(`${API_BASE}/api/ut/stream-info?id=${encodeURIComponent(v.id || v.numericId)}`).catch(() => {});
-          }
+    // Instant Pre-Warm on hover / touchstart (cuts click-to-play wait time to 0ms)
+    const prewarm = () => {
+      if (!card.dataset.prewarmed) {
+        card.dataset.prewarmed = '1';
+        if (currentSource === 'upskirt' || v.source === 'upskirt') {
+          fetch(`${API_BASE}/api/ut/prewarm?id=${encodeURIComponent(v.numericId || v.id)}`, { priority: 'low' }).catch(() => {});
+        } else if (currentSource === 'desi52' && (v.url || v.postUrl)) {
+          fetch(`${API_BASE}/api/stream-info?url=${encodeURIComponent(v.url || v.postUrl)}`).catch(() => {});
         }
-      };
-      card.addEventListener('mouseenter', prewarm, { passive: true, once: true });
-      card.addEventListener('touchstart', prewarm, { passive: true, once: true });
-    }
+      }
+    };
+    card.addEventListener('pointerenter', prewarm, { passive: true, once: true });
+    card.addEventListener('touchstart', prewarm, { passive: true, once: true });
 
     videoGrid.appendChild(card);
   });
@@ -464,8 +436,8 @@ function showIspAlert() {
   playerBuffering.classList.remove('hidden');
   playerBuffering.classList.add('clickable');
 
-  const altSource = currentSource === 'desi52' ? 'kamababa' : (currentSource === 'kamababa' ? 'cumlouder' : 'kamababa');
-  const altName = altSource === 'kamababa' ? '🔥 KamaBaba (Instant MP4)' : (altSource === 'cumlouder' ? '⚡ Cumlouder HD' : '🎬 Desi52');
+  const altSource = currentSource === 'desi52' ? 'kamababa' : (currentSource === 'kamababa' ? 'viralmms' : 'kamababa');
+  const altName = altSource === 'kamababa' ? '🔥 KamaBaba (Instant MP4)' : '⚡ ViralMMS';
 
   playerStatusText.innerHTML = `
     <div class="isp-alert-box">
@@ -575,130 +547,6 @@ async function openPlayer(video) {
     }
     console.warn('[Player Error] Native video emitted error code:', nativePlayer.error.code, nativePlayer.error.message);
 
-    // Failover for Cumlouder: First try self-healing fresh direct token, then fallback to sandboxed embed iframe
-    if (currentSource === 'cumlouder' && currentVideo) {
-      if (!currentVideo._hasAutoRetried) {
-        currentVideo._hasAutoRetried = true;
-        console.warn('[Cumlouder Self-Healing] Direct stream failed. Silently fetching fresh direct token from server...');
-        playerStatusText.textContent = 'Refreshing stream token...';
-        playerBuffering.classList.remove('hidden');
-        fetch(`${API_BASE}/api/cl/stream-info?id=${encodeURIComponent(currentVideo.id || currentVideo.slug)}&force=1`)
-          .then(r => r.json())
-          .then(data => {
-            if (data && data.ok && data.streamUrl) {
-              currentVideo.streamUrl = data.streamUrl;
-              nativePlayer.src = data.streamUrl;
-              nativePlayer.load();
-              nativePlayer.play().catch(() => {
-                nativePlayer.muted = true;
-                nativePlayer.play().catch(() => {});
-                unmuteBadge.classList.remove('hidden');
-              });
-            } else if (currentVideo.embedUrl || currentVideo.numericId) {
-              // Failover to Sandboxed Embed Engine
-              console.warn('[Cumlouder Engine Failover] Switching to Sandboxed Embed Engine...');
-              playerCdnBadge.textContent = '🛡️ Zero-Ad Sandboxed Embed';
-              nativePlayer.classList.add('hidden');
-              nativePlayer.pause();
-              embedPlayer.classList.remove('hidden');
-              embedPlayer.src = currentVideo.embedUrl || `https://www.cumlouder.com/embed/${currentVideo.numericId}/`;
-              playerBuffering.classList.add('hidden');
-            } else {
-              showIspAlert();
-            }
-          })
-          .catch(() => {
-            if (currentVideo.embedUrl || currentVideo.numericId) {
-              console.warn('[Cumlouder Engine Failover] Switching to Sandboxed Embed Engine...');
-              playerCdnBadge.textContent = '🛡️ Zero-Ad Sandboxed Embed';
-              nativePlayer.classList.add('hidden');
-              nativePlayer.pause();
-              embedPlayer.classList.remove('hidden');
-              embedPlayer.src = currentVideo.embedUrl || `https://www.cumlouder.com/embed/${currentVideo.numericId}/`;
-              playerBuffering.classList.add('hidden');
-            } else {
-              showIspAlert();
-            }
-          });
-        return;
-      }
-
-      // If already retried direct token and still failed, switch to Sandboxed Embed Engine
-      if ((currentVideo.embedUrl || currentVideo.numericId) && embedPlayer.classList.contains('hidden')) {
-        console.warn('[Cumlouder Engine Failover] Switching to Sandboxed Embed Engine...');
-        playerCdnBadge.textContent = '🛡️ Zero-Ad Sandboxed Embed';
-        nativePlayer.classList.add('hidden');
-        nativePlayer.pause();
-        embedPlayer.classList.remove('hidden');
-        embedPlayer.src = currentVideo.embedUrl || `https://www.cumlouder.com/embed/${currentVideo.numericId}/`;
-        playerBuffering.classList.add('hidden');
-        return;
-      }
-    }
-
-    // Self-Healing for UsersPorn: Step-down quality or fetch fresh direct token
-    if (currentSource === 'usersporn' && currentVideo) {
-      // 1. Step-down quality if high quality failed (e.g. 1080p -> 720p -> 480p -> 360p)
-      if (currentVideo.qualityUrls) {
-        if (activeQuality === '1080p' && currentVideo.qualityUrls['720p']) {
-          console.warn('[UsersPorn Step-Down] 1080p failed. Stepping down to 720p...');
-          activeQuality = '720p';
-          qualityBtns.forEach(b => b.classList.toggle('active', b.dataset.quality === activeQuality));
-          nativePlayer.src = currentVideo.qualityUrls['720p'];
-          nativePlayer.load();
-          nativePlayer.play().catch(() => {});
-          return;
-        } else if ((activeQuality === '720p' || activeQuality === '1080p') && currentVideo.qualityUrls['480p']) {
-          console.warn('[UsersPorn Step-Down] 720p failed. Stepping down to 480p...');
-          activeQuality = '480p';
-          qualityBtns.forEach(b => b.classList.toggle('active', b.dataset.quality === activeQuality));
-          nativePlayer.src = currentVideo.qualityUrls['480p'];
-          nativePlayer.load();
-          nativePlayer.play().catch(() => {});
-          return;
-        } else if ((activeQuality === '480p' || activeQuality === '720p') && currentVideo.qualityUrls['360p']) {
-          console.warn('[UsersPorn Step-Down] 480p failed. Stepping down to 360p...');
-          activeQuality = '360p';
-          qualityBtns.forEach(b => b.classList.toggle('active', b.dataset.quality === activeQuality));
-          nativePlayer.src = currentVideo.qualityUrls['360p'];
-          nativePlayer.load();
-          nativePlayer.play().catch(() => {});
-          return;
-        }
-      }
-
-      // 2. Fresh Token Re-fetch: If token was expired or blocked
-      if (!currentVideo._retriedFreshToken) {
-        currentVideo._retriedFreshToken = true;
-        console.warn('[UsersPorn Self-Healing] Stream failed. Silently fetching fresh direct token from server...');
-        playerStatusText.textContent = 'Refreshing stream token...';
-        playerBuffering.classList.remove('hidden');
-        fetch(`${API_BASE}/api/up/stream-info?id=${encodeURIComponent(currentVideo.id || currentVideo.rawId)}&force=1`)
-          .then(r => r.json())
-          .then(data => {
-            if (data && data.ok && data.streamUrl) {
-              Object.assign(currentVideo, data);
-              if (data.qualityUrls) {
-                activeQuality = data.qualityUrls['720p'] ? '720p' : (data.qualityUrls['480p'] ? '480p' : '360p');
-                qualityBtns.forEach(b => b.classList.toggle('active', b.dataset.quality === activeQuality));
-              }
-              const target = (currentVideo.qualityUrls && currentVideo.qualityUrls[activeQuality]) || currentVideo.streamUrl;
-              nativePlayer.src = target;
-              nativePlayer.load();
-              nativePlayer.play().catch(() => {
-                nativePlayer.muted = true;
-                nativePlayer.play().catch(() => {});
-                unmuteBadge.classList.remove('hidden');
-              });
-            } else {
-              showIspAlert();
-            }
-          })
-          .catch(() => showIspAlert());
-        return;
-      }
-    }
-
     showIspAlert();
   };
 
@@ -725,129 +573,30 @@ async function openPlayer(video) {
     qualitySelector.classList.add('hidden');
   }
 
-  // ==========================================
-  // Cumlouder Hybrid Dual-Engine Playback
-  if (currentSource === 'cumlouder') {
-    // Hot Window: Native HTML5 MP4 Engine (0ms start)
-    if (video.streamUrl) {
-      playerCdnBadge.textContent = '⚡ CDN77 Direct MP4';
-      embedPlayer.classList.add('hidden');
-      embedPlayer.src = '';
-      nativePlayer.classList.remove('hidden');
-      if (video.poster) nativePlayer.poster = video.poster;
-      nativePlayer.src = video.streamUrl;
-      nativePlayer.muted = false;
-      startStallWatchdog();
-      const playPromise = nativePlayer.play();
-      if (playPromise !== undefined) {
-        playPromise.then(() => {
-          clearStallWatchdog();
-          playerBuffering.classList.add('hidden');
-          unmuteBadge.classList.add('hidden');
-        }).catch(() => {
-          nativePlayer.muted = true;
-          nativePlayer.play().catch(() => {});
-          unmuteBadge.classList.remove('hidden');
-        });
-      }
-      return;
-    }
 
-    // Cold Archive: Resolve clean stream via server and play in Native Player (0ms on next tap)
-    playerBuffering.classList.remove('hidden');
-    playerStatusText.textContent = 'Resolving clean 1080p stream...';
-    try {
-      const res = await fetch(`${API_BASE}/api/cl/stream-info?id=${encodeURIComponent(video.id || video.slug)}`);
-      const data = await res.json();
-      if (data && data.ok) {
-        Object.assign(video, data);
-        currentVideo = video;
-        if (data.streamUrl) {
-          playerCdnBadge.textContent = '⚡ CDN77 Direct MP4';
-          embedPlayer.classList.add('hidden');
-          embedPlayer.src = '';
-          nativePlayer.classList.remove('hidden');
-          if (video.poster) nativePlayer.poster = video.poster;
-          nativePlayer.src = data.streamUrl;
-          nativePlayer.muted = false;
-          startStallWatchdog();
-          const playPromise = nativePlayer.play();
-          if (playPromise !== undefined) {
-            playPromise.then(() => {
-              clearStallWatchdog();
-              playerBuffering.classList.add('hidden');
-              unmuteBadge.classList.add('hidden');
-            }).catch(() => {
-              nativePlayer.muted = true;
-              nativePlayer.play().catch(() => {});
-              unmuteBadge.classList.remove('hidden');
-            });
-          }
-          return;
-        } else if (data.embedUrl || video.numericId) {
-          playerCdnBadge.textContent = '🛡️ Zero-Ad Sandboxed Embed';
-          nativePlayer.classList.add('hidden');
-          nativePlayer.pause();
-          embedPlayer.classList.remove('hidden');
-          embedPlayer.src = data.embedUrl || `https://www.cumlouder.com/embed/${video.numericId}/`;
-          playerBuffering.classList.add('hidden');
-          return;
-        }
-      }
-      showIspAlert();
-      return;
-    } catch (e) {
-      showIspAlert();
-      return;
-    }
-  }
 
-  // On-demand lazy resolution for cold or expired UsersPorn archive videos
+  // On-demand lazy resolution for cold or raw expired Upskirt videos
   const nowSec = Math.floor(Date.now() / 1000);
-  const isUpExpired = !video.streamUrl || (video.expiresAt && video.expiresAt <= nowSec + 300);
-  if (currentSource === 'usersporn' && isUpExpired) {
-    playerStatusText.textContent = 'Resolving clean HD stream...';
-    try {
-      const res = await fetch(`${API_BASE}/api/up/stream-info?id=${encodeURIComponent(video.id || video.rawId)}&force=1`);
-      const data = await res.json();
-      if (data.ok && data.streamUrl) {
-        Object.assign(video, data);
-        currentVideo = video;
-        if (video.qualityUrls && qualitySelector) {
-          qualitySelector.classList.remove('hidden');
-          qualityBtns.forEach(btn => {
-            const q = btn.dataset.quality;
-            btn.classList.toggle('hidden', !video.qualityUrls[q]);
-          });
-          let defQ = '720p';
-          if (video.defaultQuality === 'x3' && video.qualityUrls['1080p']) defQ = '1080p';
-          else if (video.defaultQuality === 'x2' && video.qualityUrls['720p']) defQ = '720p';
-          else if (video.defaultQuality === 'x1' && video.qualityUrls['480p']) defQ = '480p';
-          else if (video.qualityUrls['720p']) defQ = '720p';
-          else if (video.qualityUrls['480p']) defQ = '480p';
-          else defQ = '360p';
-          activeQuality = defQ;
-          qualityBtns.forEach(b => b.classList.toggle('active', b.dataset.quality === activeQuality));
-        }
-      } else {
-        showIspAlert();
-        return;
-      }
-    } catch (e) {
-      showIspAlert();
-      return;
-    }
-  }
-
-  // On-demand lazy resolution for cold Upskirt videos
-  if (currentSource === 'upskirt' && !video.streamUrl) {
+  const isVirtualStream = video.streamUrl && video.streamUrl.startsWith('/api/ut/stream/');
+  const isUtExpired = !isVirtualStream && (!video.streamUrl || !video.expiresAt || (video.expiresAt <= nowSec + 120));
+  const needsUtProxy = !isVirtualStream && video.streamUrl && video.streamUrl.includes('mjedge.net');
+  if ((currentSource === 'upskirt' || video.source === 'upskirt') && (isUtExpired || needsUtProxy)) {
     playerStatusText.textContent = 'Resolving clean 1080p stream...';
     try {
-      const res = await fetch(`${API_BASE}/api/ut/stream-info?id=${encodeURIComponent(video.id || video.numericId)}`);
+      const res = await fetch(`${API_BASE}/api/ut/stream-info?id=${encodeURIComponent(video.numericId || video.id)}&force=1`);
       const data = await res.json();
       if (data && data.ok && data.streamUrl) {
         Object.assign(video, data);
         currentVideo = video;
+        if (data.qualityUrls && qualitySelector) {
+          qualitySelector.classList.remove('hidden');
+          qualityBtns.forEach(btn => {
+            const q = btn.dataset.quality;
+            btn.classList.toggle('hidden', !data.qualityUrls[q]);
+          });
+          activeQuality = data.defaultQuality || '1080p';
+          qualityBtns.forEach(b => b.classList.toggle('active', b.dataset.quality === activeQuality));
+        }
       } else {
         showIspAlert();
         return;
@@ -1129,7 +878,7 @@ document.addEventListener('keydown', (e) => {
 // Initialize App
 const urlParams = new URLSearchParams(window.location.search);
 const initSource = urlParams.get('source');
-if (initSource && ['kamababa', 'viralmms', 'desi52', 'usersporn', 'cumlouder', 'upskirt'].includes(initSource.toLowerCase())) {
+if (initSource && ['kamababa', 'viralmms', 'desi52', 'upskirt'].includes(initSource.toLowerCase())) {
   setSource(initSource.toLowerCase());
 } else {
   document.querySelectorAll('.source-tab').forEach(t => {

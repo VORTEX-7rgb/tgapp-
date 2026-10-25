@@ -126,9 +126,10 @@ function getBrowseVideos(page = 1, limit = 20) {
  */
 function getCategoryVideos(slug, page = 1, limit = 20) {
   checkAutoReload();
-  const filtered = slug === 'all'
+  const s = (slug || '').toLowerCase().trim();
+  const filtered = (s === 'all' || !s)
     ? catalogList
-    : catalogList.filter(v => v.category === slug || (v.slug && v.slug.includes(slug)));
+    : catalogList.filter(v => (v.category && v.category.toLowerCase() === s) || (Array.isArray(v.tags) && v.tags.includes(s)) || (v.slug && v.slug.includes(s)));
 
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -150,7 +151,7 @@ function getCategoryVideos(slug, page = 1, limit = 20) {
 }
 
 /**
- * In-memory keyword search across titles and slugs with direct streamUrl attached (Mandatory Fix #3)
+ * In-memory keyword search across titles, slugs, categories, and tags with direct streamUrl attached
  */
 function searchVideos(query, page = 1, limit = 20) {
   checkAutoReload();
@@ -161,7 +162,7 @@ function searchVideos(query, page = 1, limit = 20) {
 
   const terms = q.split(/\s+/).filter(Boolean);
   const matched = catalogList.filter(v => {
-    const text = `${v.title || ''} ${v.slug || ''} ${v.category || ''}`.toLowerCase();
+    const text = `${v.title || ''} ${v.slug || ''} ${v.category || ''} ${(v.tags || []).join(' ')}`.toLowerCase();
     return terms.every(t => text.includes(t));
   });
 
@@ -260,6 +261,70 @@ async function syncCatalog(maxPages = 3, maxVideosPerPage = 30) {
   }
 }
 
+/**
+ * Fast recommendation engine for KamaBaba videos
+ * Matches category, tags, and title keywords with zero-latency in-memory lookup
+ */
+function getRelatedVideos(currentId, category = '', title = '', limit = 12) {
+  checkAutoReload();
+  if (!catalogList || catalogList.length === 0) return [];
+
+  const s = (category || '').toLowerCase().trim();
+  const titleWords = (title || '').toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 3 && !['video', 'full', 'leak', 'desi', 'mms', 'part', 'indian', 'hindi', 'watch'].includes(w));
+
+  const matched = [];
+  const seenIds = new Set([String(currentId)]);
+
+  // 1. Keyword / category match
+  for (let i = 0; i < catalogList.length; i++) {
+    const v = catalogList[i];
+    if (seenIds.has(String(v.id))) continue;
+
+    let match = false;
+    if (s && s !== 'all') {
+      if ((v.category && v.category.toLowerCase() === s) ||
+          (Array.isArray(v.tags) && v.tags.some(t => String(t).toLowerCase() === s)) ||
+          (v.slug && v.slug.includes(s))) {
+        match = true;
+      }
+    }
+
+    if (!match && titleWords.length > 0) {
+      const vText = `${v.title || ''} ${v.slug || ''}`.toLowerCase();
+      if (titleWords.some(w => vText.includes(w))) {
+        match = true;
+      }
+    }
+
+    if (match) {
+      seenIds.add(String(v.id));
+      matched.push(v);
+      if (matched.length >= limit * 2) break;
+    }
+  }
+
+  // 2. Shuffle / pick up to limit
+  matched.sort(() => Math.random() - 0.5);
+  const results = matched.slice(0, limit);
+
+  // 3. Backfill if needed
+  if (results.length < limit) {
+    const randOffset = Math.floor(Math.random() * Math.max(1, catalogList.length - limit));
+    for (let i = randOffset; i < catalogList.length && results.length < limit; i++) {
+      const v = catalogList[i];
+      if (!seenIds.has(String(v.id))) {
+        seenIds.add(String(v.id));
+        results.push(v);
+      }
+    }
+  }
+
+  return results;
+}
+
 // Initial catalog load on module import
 loadCatalog();
 
@@ -273,6 +338,7 @@ module.exports = {
   getBrowseVideos,
   getCategoryVideos,
   searchVideos,
+  getRelatedVideos,
   syncCatalog,
   isSyncing: () => isSyncing,
   getCatalogSize: () => {

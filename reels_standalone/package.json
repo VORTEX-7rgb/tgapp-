@@ -1,0 +1,23 @@
+{
+  "name": "fiziiii-reels-standalone",
+  "version": "1.0.0",
+  "description": "High-Performance Isolated Vertical Reels & Desi MMS Web App Engine",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "reels",
+    "tiktok",
+    "shorts",
+    "desi",
+    "streaming",
+    "zero-bandwidth"
+  ],
+  "author": "Fiziiii",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

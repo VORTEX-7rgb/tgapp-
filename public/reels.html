@@ -1,0 +1,1788 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <!-- Zero-Referrer Policy: Required for direct CDN video streaming without 403 blocks -->
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta name="theme-color" content="#000000">
+  <title>FIZIIII — Pro Reels Engine</title>
+
+  <!-- Preconnect to upstream CDNs for sub-100ms first-byte video start -->
+  <link rel="preconnect" href="https://cdn.tikpron.com" crossorigin>
+  <link rel="preconnect" href="https://cdn2.nuditok.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.mykamababa.com" crossorigin>
+  <link rel="preconnect" href="https://vms.viralmms.net" crossorigin>
+
+  <!-- Tailwind CSS for utility layout & responsive framing -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <style>
+    /* ============================================================================
+       APPLE iOS 18 / visionOS & TELEGRAM MINI APP DESIGN SYSTEM
+       Zero Neon AI-Slop • True OLED Pitch Black • Specular Hairline Glass
+       ============================================================================ */
+    :root {
+      --bg-oled: #000000;
+      --bg-elevated: #0c0c0e;
+      --glass-material: rgba(28, 28, 30, 0.62);
+      --glass-material-heavy: rgba(22, 22, 24, 0.82);
+      --glass-pill-active: rgba(255, 255, 255, 0.96);
+      --glass-border: rgba(255, 255, 255, 0.11);
+      --glass-specular: rgba(255, 255, 255, 0.22);
+      --label-primary: #ffffff;
+      --label-secondary: rgba(235, 235, 245, 0.65);
+      --label-tertiary: rgba(235, 235, 245, 0.38);
+      --ios-pink: #ff375f;
+      --ios-blue: #0a84ff;
+      --ios-gold: #ffd60a;
+      --spring-easing: cubic-bezier(0.22, 1, 0.36, 1);
+      --bounce-easing: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      --safe-top: env(safe-area-inset-top, 14px);
+      --safe-bottom: env(safe-area-inset-bottom, 16px);
+    }
+
+    /* Legacy "AI Slop" Mode Variables (Only activated when user toggles Before/After Inspector) */
+    body.legacy-slop-mode {
+      --glass-material: rgba(18, 20, 29, 0.85);
+      --glass-border: rgba(0, 242, 254, 0.45);
+      --glass-pill-active: linear-gradient(135deg, #7c3aed, #00f2fe);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      background-color: var(--bg-oled);
+      color: var(--label-primary);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", system-ui, sans-serif;
+      height: 100dvh;
+      width: 100vw;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      letter-spacing: -0.012em;
+    }
+
+    /* Subtle Studio Ambient Backlight (Desktop Only - Monochrome Warm/Cool Depth) */
+    .studio-backlight {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0.015) 38%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+      transition: background 0.5s ease;
+    }
+    body.legacy-slop-mode .studio-backlight {
+      background: radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.35) 0%, rgba(0, 242, 254, 0.25) 45%, transparent 75%);
+    }
+
+    /* Stage & Device Frame */
+    .reels-stage {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      max-width: 430px;
+      height: 100dvh;
+      z-index: 10;
+    }
+
+    @media (min-width: 640px) {
+      .reels-stage {
+        height: min(92dvh, 890px);
+        max-width: 412px;
+      }
+    }
+
+    .reels-viewport {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: #000000;
+      overflow: hidden;
+      box-shadow: 0 32px 80px -16px rgba(0, 0, 0, 0.95), 0 0 0 1px var(--glass-border);
+      transition: border-radius 0.4s var(--spring-easing), box-shadow 0.4s var(--spring-easing);
+    }
+
+    @media (min-width: 640px) {
+      .reels-viewport {
+        border-radius: 44px;
+        box-shadow: 
+          0 40px 100px -20px rgba(0, 0, 0, 0.95),
+          0 0 0 1px rgba(255, 255, 255, 0.14),
+          inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+      }
+    }
+
+    /* Core Frosted Material Utility */
+    .apple-glass {
+      background: var(--glass-material);
+      backdrop-filter: blur(28px) saturate(190%);
+      -webkit-backdrop-filter: blur(28px) saturate(190%);
+      border: 0.5px solid var(--glass-border);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32), inset 0 0.5px 0 0 rgba(255, 255, 255, 0.14);
+    }
+
+    /* Vertical Scroll-Snap Feed Container */
+    .reels-container {
+      width: 100%;
+      height: 100%;
+      overflow-y: scroll;
+      scroll-snap-type: y mandatory;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      overscroll-behavior-y: contain;
+      scroll-behavior: auto;
+    }
+    .reels-container::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* Individual Reel Slide */
+    .reel-item {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+      background: #000000;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    /* Video & Procedural Canvas Stream */
+    .reel-media {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scale(1.03);
+      transition: transform 0.35s var(--spring-easing), object-fit 0.25s ease;
+      pointer-events: none;
+    }
+    .reel-media.fit-contain {
+      object-fit: contain;
+      transform: scale(1.0);
+    }
+
+    /* Cinematic Optical Vignettes (Natural contrast without heavy black bars) */
+    .reel-vignette-top {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 150px;
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0.68) 0%, rgba(0, 0, 0, 0.25) 55%, transparent 100%);
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    .reel-vignette-bottom {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 260px;
+      background: linear-gradient(0deg, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.42) 52%, transparent 100%);
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    /* ============================================================================
+       TOP NAVIGATION & SLIDING iOS SEGMENTED CONTROL
+       ============================================================================ */
+    .reels-header {
+      position: absolute;
+      top: max(14px, var(--safe-top));
+      left: 0;
+      right: 0;
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 0 14px;
+      pointer-events: none;
+    }
+    .reels-header > * {
+      pointer-events: auto;
+    }
+
+    .header-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand-cluster {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 11px 5px 9px;
+      border-radius: 999px;
+    }
+
+    .live-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #30d158;
+      box-shadow: 0 0 8px rgba(48, 209, 88, 0.8);
+    }
+
+    .brand-title {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--label-primary);
+    }
+
+    .counter-pill {
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--label-secondary);
+      padding-left: 7px;
+      border-left: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .vip-header-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #ffffff;
+      text-decoration: none;
+      transition: transform 0.2s var(--spring-easing), background 0.2s ease;
+    }
+    .vip-header-btn:active {
+      transform: scale(0.94);
+    }
+    body.legacy-slop-mode .vip-header-btn {
+      background: linear-gradient(135deg, #2563eb, #00f2fe);
+      box-shadow: 0 4px 15px rgba(0, 242, 254, 0.45);
+    }
+
+    /* Segmented Control Track */
+    .segmented-control {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      padding: 3px;
+      border-radius: 999px;
+      width: 100%;
+    }
+
+    .segment-indicator {
+      position: absolute;
+      top: 3px;
+      bottom: 3px;
+      left: 3px;
+      width: calc((100% - 6px) / 3);
+      background: var(--glass-pill-active);
+      border-radius: 999px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+      transition: transform 0.38s var(--spring-easing);
+      z-index: 1;
+    }
+
+    .segment-btn {
+      position: relative;
+      z-index: 2;
+      background: transparent;
+      border: none;
+      padding: 6px 4px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--label-secondary);
+      cursor: pointer;
+      border-radius: 999px;
+      transition: color 0.25s ease, transform 0.15s ease;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    .segment-btn.active {
+      color: #000000;
+      font-weight: 700;
+    }
+    body.legacy-slop-mode .segment-btn.active {
+      color: #ffffff;
+    }
+
+    /* ============================================================================
+       RIGHT VERTICAL ACTION BAR (SF SYMBOLS / VISION-OS GLASS)
+       ============================================================================ */
+    .reel-actions {
+      position: absolute;
+      right: 12px;
+      bottom: calc(56px + var(--safe-bottom));
+      z-index: 40;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .action-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      background: none;
+      border: none;
+      color: var(--label-primary);
+      cursor: pointer;
+      outline: none;
+    }
+
+    .action-circle {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.28s var(--bounce-easing), background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+    }
+
+    .action-btn:active .action-circle {
+      transform: scale(0.84);
+    }
+
+    .action-btn.liked .action-circle {
+      background: rgba(255, 55, 95, 0.22);
+      border-color: rgba(255, 55, 95, 0.45);
+      color: var(--ios-pink);
+    }
+
+    .action-btn.saved .action-circle {
+      background: rgba(255, 214, 10, 0.2);
+      border-color: rgba(255, 214, 10, 0.45);
+      color: var(--ios-gold);
+    }
+
+    .action-label {
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: rgba(255, 255, 255, 0.88);
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.65);
+    }
+
+    /* ============================================================================
+       BOTTOM METADATA & INTERACTIVE SCRUBBER HUD
+       ============================================================================ */
+    .reel-meta {
+      position: absolute;
+      left: 16px;
+      right: 74px;
+      bottom: calc(22px + var(--safe-bottom));
+      z-index: 40;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      pointer-events: auto;
+    }
+
+    .meta-author-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .meta-author {
+      font-weight: 700;
+      font-size: 14.5px;
+      color: #ffffff;
+      letter-spacing: -0.015em;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+    }
+
+    .verified-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--ios-blue);
+    }
+
+    .meta-channel-tag {
+      background: rgba(255, 255, 255, 0.14);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 0.5px solid rgba(255, 255, 255, 0.18);
+      color: rgba(255, 255, 255, 0.92);
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 6px;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .meta-title {
+      font-size: 13.5px;
+      line-height: 1.38;
+      color: rgba(255, 255, 255, 0.92);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+      cursor: pointer;
+      transition: all 0.25s ease;
+    }
+    .meta-title.expanded {
+      -webkit-line-clamp: 6;
+      background: rgba(0, 0, 0, 0.45);
+      padding: 6px 8px;
+      border-radius: 10px;
+      backdrop-filter: blur(12px);
+    }
+
+    .meta-audio-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      width: fit-content;
+      max-width: 100%;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 0.5px solid rgba(255, 255, 255, 0.1);
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--label-secondary);
+    }
+
+    /* Interactive Bottom Scrubber Bar */
+    .scrubber-container {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 22px;
+      display: flex;
+      align-items: flex-end;
+      padding: 0 12px calc(6px + env(safe-area-inset-bottom, 0px));
+      z-index: 45;
+      cursor: pointer;
+    }
+
+    .scrubber-track {
+      position: relative;
+      width: 100%;
+      height: 2.5px;
+      background: rgba(255, 255, 255, 0.22);
+      border-radius: 999px;
+      overflow: visible;
+      transition: height 0.2s var(--spring-easing), background 0.2s ease;
+    }
+
+    .scrubber-container:hover .scrubber-track,
+    .scrubber-container.scrubbing .scrubber-track {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.32);
+    }
+
+    .scrubber-fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 0%;
+      background: #ffffff;
+      border-radius: 999px;
+      transition: width 0.08s linear;
+    }
+
+    .scrubber-thumb {
+      position: absolute;
+      top: 50%;
+      right: -5px;
+      transform: translateY(-50%) scale(0);
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.6);
+      transition: transform 0.18s var(--bounce-easing);
+    }
+
+    .scrubber-container:hover .scrubber-thumb,
+    .scrubber-container.scrubbing .scrubber-thumb {
+      transform: translateY(-50%) scale(1);
+    }
+
+    /* Floating Timecode HUD when scrubbing */
+    .scrub-time-hud {
+      position: absolute;
+      bottom: 26px;
+      left: 50%;
+      transform: translateX(-50%) translateY(6px) scale(0.92);
+      opacity: 0;
+      pointer-events: none;
+      padding: 4px 11px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: #ffffff;
+      transition: all 0.2s var(--spring-easing);
+      z-index: 60;
+    }
+    .scrubber-container:hover .scrub-time-hud,
+    .scrubber-container.scrubbing .scrub-time-hud {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0) scale(1);
+    }
+
+    /* ============================================================================
+       MICRO-INTERACTIONS: DOUBLE-TAP HEART BURST, PLAY/PAUSE, SPINNER
+       ============================================================================ */
+    .coord-heart-burst {
+      position: absolute;
+      width: 84px;
+      height: 84px;
+      pointer-events: none;
+      z-index: 65;
+      transform: translate(-50%, -50%) scale(0);
+      animation: appleHeartPop 0.82s var(--bounce-easing) forwards;
+      filter: drop-shadow(0 12px 28px rgba(255, 55, 95, 0.55));
+    }
+
+    @keyframes appleHeartPop {
+      0% {
+        transform: translate(-50%, -50%) scale(0) rotate(var(--rot, -8deg));
+        opacity: 0;
+      }
+      35% {
+        transform: translate(-50%, -50%) scale(1.22) rotate(var(--rot, -8deg));
+        opacity: 1;
+      }
+      65% {
+        transform: translate(-50%, -55%) scale(0.98) rotate(0deg);
+        opacity: 1;
+      }
+      100% {
+        transform: translate(-50%, -95%) scale(1.08) rotate(0deg);
+        opacity: 0;
+      }
+    }
+
+    .play-pause-indicator {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.6);
+      opacity: 0;
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      pointer-events: none;
+      z-index: 55;
+      transition: transform 0.28s var(--bounce-easing), opacity 0.22s ease;
+    }
+    .play-pause-indicator.show {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 1;
+    }
+
+    /* iOS Indeterminate Spinner */
+    .reel-spinner {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 38px;
+      height: 38px;
+      border: 2.5px solid rgba(255, 255, 255, 0.14);
+      border-top-color: rgba(255, 255, 255, 0.92);
+      border-radius: 50%;
+      animation: iosSpin 0.75s linear infinite;
+      z-index: 30;
+      pointer-events: none;
+    }
+    @keyframes iosSpin {
+      to { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+
+    /* Desktop Floating Controls */
+    .desktop-nav {
+      position: absolute;
+      right: -64px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 100;
+    }
+    @media (min-width: 680px) {
+      .desktop-nav {
+        display: flex;
+      }
+    }
+    .desktop-nav-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      color: rgba(255, 255, 255, 0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform 0.2s var(--spring-easing), background 0.2s ease, color 0.2s ease;
+    }
+    .desktop-nav-btn:hover {
+      background: rgba(255, 255, 255, 0.16);
+      color: #ffffff;
+      transform: scale(1.06);
+    }
+    .desktop-nav-btn:active {
+      transform: scale(0.92);
+    }
+
+    /* ============================================================================
+       iOS BOTTOM SHEET DRAWER (SAVED VAULT & PRODUCTION CODE EXPORT)
+       ============================================================================ */
+    .ios-sheet-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.32s var(--spring-easing);
+      z-index: 80;
+    }
+    .ios-sheet-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .ios-sheet {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      max-height: 82%;
+      border-top-left-radius: 28px;
+      border-top-right-radius: 28px;
+      transform: translateY(104%);
+      transition: transform 0.42s var(--spring-easing);
+      z-index: 90;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .ios-sheet.open {
+      transform: translateY(0);
+    }
+
+    /* Toast Notification Pill */
+    .ios-toast {
+      position: absolute;
+      top: 112px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-16px) scale(0.92);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 95;
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #ffffff;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+      transition: all 0.32s var(--spring-easing);
+    }
+    .ios-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0) scale(1);
+    }
+
+    /* Soundwave Animation Bars */
+    .audio-bar {
+      width: 2px;
+      background: currentColor;
+      border-radius: 2px;
+      animation: soundWave 0.9s ease-in-out infinite;
+    }
+    .audio-bar:nth-child(2) { animation-delay: 0.2s; }
+    .audio-bar:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes soundWave {
+      0%, 100% { height: 4px; }
+      50% { height: 11px; }
+    }
+  
+    
+
+    /* Taste Affinity Pulse Badge */
+    .taste-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      font-weight: 600;
+      color: #00f2fe;
+      background: rgba(0, 242, 254, 0.12);
+      border: 0.5px solid rgba(0, 242, 254, 0.28);
+      padding: 2px 7px;
+      border-radius: 999px;
+      letter-spacing: 0.02em;
+      transition: all 0.3s ease;
+    }
+    .taste-pill.pulse {
+      animation: tastePulse 0.45s ease-out;
+    }
+    @keyframes tastePulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.15); background: rgba(0, 242, 254, 0.25); }
+      100% { transform: scale(1); }
+    }
+
+  </style>
+</head>
+<body>
+
+  <!-- Subtle Studio Ambient Backlight -->
+  <div class="studio-backlight"></div>
+
+  <!-- Floating Developer / Design Token Inspector Trigger (Desktop & Mobile) -->
+  <div class="fixed bottom-4 left-4 z-50 flex flex-col gap-2" style="display: none !important;">
+    <button id="toggle-slop-btn" class="apple-glass px-3.5 py-2 rounded-full text-xs font-semibold text-white/90 hover:text-white flex items-center gap-2 transition-transform active:scale-95">
+      <span id="slop-indicator-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+      <span id="slop-mode-label">UI Mode: Apple iOS 18 Glass</span>
+    </button>
+    <button id="open-code-modal-btn" class="apple-glass px-3.5 py-2 rounded-full text-xs font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-2 transition-transform active:scale-95">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg>
+      <span>Export Production Files</span>
+    </button>
+  </div>
+
+  <!-- Main Stage Wrapper -->
+  <div class="reels-stage">
+
+    <!-- Main 9:16 Viewport -->
+    <main class="reels-viewport">
+
+      <!-- iOS Dynamic Toast Pill -->
+      <div id="ios-toast" class="ios-toast apple-glass">
+        <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/></svg>
+        <span id="ios-toast-text">Copied to clipboard</span>
+      </div>
+
+      <!-- Top Fixed Header -->
+      <header class="reels-header">
+        <div class="header-top-row">
+          <!-- Brand & Live Index Counter -->
+          <div class="brand-cluster apple-glass">
+            <span class="live-dot"></span>
+            <span class="brand-title">FIZIIII</span>
+            <span id="reel-counter-badge" class="counter-pill">1 / 12,764</span>
+            <span id="user-taste-pill" class="taste-pill" title="Learned Taste Affinity">⚡ #ForYou</span>
+          </div>
+
+          <!-- Right Cluster: Saved Vault + VIP Channel -->
+          <div class="flex items-center gap-2">
+            <button id="open-vault-btn" class="apple-glass w-8 h-8 rounded-full flex items-center justify-center text-white/85 hover:text-white transition-transform active:scale-90 relative" title="Saved Reels Vault">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z"/></svg>
+              <span id="vault-count-badge" class="hidden absolute -top-1 -right-1 w-4 h-4 rounded-full bg-white text-black text-[9px] font-bold flex items-center justify-center">0</span>
+            </button>
+
+            <a href="https://t.me/Fiziiiibot" target="_blank" rel="noopener" class="vip-header-btn apple-glass">
+              <svg class="w-3 h-3 text-amber-300" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+              <span>VIP</span>
+              <svg class="w-2.5 h-2.5 text-white/50" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+            </a>
+          </div>
+        </div>
+
+        <!-- iOS 18 Sliding Segmented Control -->
+        <nav class="segmented-control apple-glass" aria-label="Feed Channels">
+          <div id="segment-indicator" class="segment-indicator"></div>
+          <button class="segment-btn active" data-source="trending" data-idx="0">Trending</button>
+          <button class="segment-btn" data-source="desi" data-idx="1">Desi</button>
+          <button class="segment-btn" data-source="english" data-idx="2">English</button>
+        </nav>
+      </header>
+
+      <!-- Vertical Reels Feed Container -->
+      <div id="reels-container" class="reels-container" role="feed"></div>
+
+      <!-- Saved Bookmarks Vault Bottom Sheet -->
+      <div id="vault-backdrop" class="ios-sheet-backdrop"></div>
+      <section id="vault-sheet" class="ios-sheet apple-glass" style="background: var(--glass-material-heavy);">
+        <div class="w-full pt-2.5 pb-3 px-4 flex flex-col items-center border-b border-white/10">
+          <div class="w-9 h-1 rounded-full bg-white/25 mb-3"></div>
+          <div class="w-full flex items-center justify-between">
+            <h3 class="text-sm font-semibold tracking-tight text-white">Saved Collection</h3>
+            <button id="close-vault-btn" class="text-xs font-medium text-white/60 hover:text-white px-2 py-1">Done</button>
+          </div>
+        </div>
+        <div id="vault-list" class="p-4 overflow-y-auto grid grid-cols-2 gap-3 max-h-[60vh]">
+          <!-- Populated dynamically -->
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Desktop Floating Navigation Chevrons -->
+    <div class="desktop-nav">
+      <button id="desktop-prev" class="desktop-nav-btn apple-glass" title="Previous Reel (Up Arrow)" aria-label="Previous Reel">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 15.75 7.5-7.5 7.5 7.5"/></svg>
+      </button>
+      <button id="desktop-next" class="desktop-nav-btn apple-glass" title="Next Reel (Down Arrow)" aria-label="Next Reel">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>
+      </button>
+    </div>
+
+  </div>
+
+  <!-- Production File Exporter Modal (Allows 1-click copy of separated index.html, reels.css, reels.js) -->
+  <div id="code-modal" style="display: none !important;" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+    <div class="apple-glass w-full max-w-2xl rounded-3xl overflow-hidden border border-white/15 flex flex-col max-h-[85vh]" style="background: rgba(18, 18, 20, 0.94);">
+      <div class="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+        <div>
+          <h2 class="text-sm font-bold text-white">Fiziiii Apple/Telegram Production Architecture</h2>
+          <p class="text-[11px] text-white/60 mt-0.5">Drop this file directly into <code class="text-sky-400">public/index.html</code> — it auto-connects to <code class="text-sky-400">/api/reels</code></p>
+        </div>
+        <button id="close-code-modal-btn" class="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/80">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-5 overflow-y-auto space-y-4 text-xs text-white/80 leading-relaxed">
+        <div class="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-2">
+          <div class="font-semibold text-white flex items-center justify-between">
+            <span>Why This Upgrade Feels Like Apple iOS 18 & Telegram Native</span>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Zero AI-Slop</span>
+          </div>
+          <ul class="list-disc pl-4 space-y-1 text-[11.5px] text-white/70">
+            <li><strong>True OLED Black + Specular Hairline Glass:</strong> Replaced `#8b5cf6` / `#00f2fe` neon glows with `rgba(28, 28, 30, 0.62)`, `backdrop-filter: blur(28px) saturate(190%)`, and `0.5px` specular borders.</li>
+            <li><strong>Physics Segmented Control:</strong> Replaced loose pill buttons with an iOS sliding segmented track (`cubic-bezier(0.22, 1, 0.36, 1)`).</li>
+            <li><strong>SF-Symbol Grade SVGs:</strong> Replaced cheap OS emojis (`❤️`, `📤`, `💎`, `🔇`) with custom `1.8px` stroke vector glyphs.</li>
+            <li><strong>Interactive Scrubber + Timecode HUD:</strong> Added a `2.5px` bottom progress bar that expands to `6px` on drag with live timecode scrubbing.</li>
+            <li><strong>Telegram HapticFeedback SDK:</strong> Triggers native iOS/Android Taptic Engine vibrations on swipe, like, bookmark, and tab switch.</li>
+          </ul>
+        </div>
+
+        <div class="flex items-center justify-between gap-3 pt-1">
+          <button id="copy-full-html-btn" class="flex-1 py-2.5 px-4 rounded-xl bg-white text-black font-semibold text-xs hover:bg-white/90 transition active:scale-98 flex items-center justify-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184"/></svg>
+            <span>Copy Complete Self-Contained public/index.html</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ============================================================================
+       FIZIIII PRO DOPAMINE V2 ENGINE (INSTAGRAM / TIKTOK TIER)
+       Hardware Zero-Flash Playback • Dwell Velocity Scoring • Slot-Machine Feed
+       ============================================================================ */
+
+    // 1. Telegram Mini App Native SDK
+    const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+    if (tg) {
+      try {
+        tg.ready();
+        tg.expand();
+        if (tg.setHeaderColor) tg.setHeaderColor('#000000');
+        if (tg.setBackgroundColor) tg.setBackgroundColor('#000000');
+      } catch (e) {}
+    }
+
+    function triggerHaptic(type = 'light') {
+      try {
+        if (tg && tg.HapticFeedback) {
+          if (type === 'success') tg.HapticFeedback.notificationOccurred('success');
+          else if (type === 'selection') tg.HapticFeedback.selectionChanged();
+          else tg.HapticFeedback.impactOccurred(type);
+        } else if (navigator.vibrate) {
+          navigator.vibrate(type === 'medium' ? 18 : 8);
+        }
+      } catch (e) {}
+    }
+
+    // 2. Client-Side Dopamine Taste Profile (localStorage + 0.92 Exponential Decay)
+    const TASTE_STORAGE_KEY = 'fiziiii_taste_v1';
+    const SEEN_STORAGE_KEY = 'fiziiii_seen_v1';
+    let userTaste = new Map();
+    let recentSeenQueue = [];
+    let swipeCount = 0;
+    let slideStartTime = Date.now();
+    let telemetryQueue = [];
+
+    let tasteState = {
+      desiRatio: 0.50
+    };
+
+    // Load initial taste weights and source affinity
+    try {
+      const rawTaste = JSON.parse(localStorage.getItem(TASTE_STORAGE_KEY) || '{}');
+      if (rawTaste.desiRatio !== undefined) {
+        tasteState.desiRatio = Math.min(0.80, Math.max(0.20, Number(rawTaste.desiRatio) || 0.50));
+      }
+      const rawTags = rawTaste.tags || rawTaste;
+      Object.entries(rawTags).forEach(([tag, weight]) => {
+        if (tag !== 'desiRatio') userTaste.set(tag, Number(weight));
+      });
+    } catch (e) {}
+
+    function updateSourceAffinity(reelSource, dwellDelta) {
+      const isDesi = (reelSource === 'desi' || reelSource === 'kamababa');
+      const shift = dwellDelta > 2 ? 0.04 : (dwellDelta < 0 ? -0.04 : 0);
+      if (shift === 0) return;
+
+      const delta = isDesi ? shift : -shift;
+      tasteState.desiRatio = Math.min(0.80, Math.max(0.20, +(tasteState.desiRatio + delta).toFixed(2)));
+    }
+
+    // Load recent seen history (last 250 items to prevent duplicate delivery)
+    try {
+      recentSeenQueue = JSON.parse(localStorage.getItem(SEEN_STORAGE_KEY) || '[]');
+      if (!Array.isArray(recentSeenQueue)) recentSeenQueue = [];
+    } catch (e) {}
+
+    function saveTasteProfile() {
+      try {
+        const obj = {
+          desiRatio: tasteState.desiRatio,
+          tags: {}
+        };
+        for (const [k, v] of userTaste.entries()) {
+          obj.tags[k] = v;
+        }
+        localStorage.setItem(TASTE_STORAGE_KEY, JSON.stringify(obj));
+        localStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify(recentSeenQueue.slice(-250)));
+      } catch (e) {}
+    }
+
+    function updateTopTastePill() {
+      const pill = document.getElementById('user-taste-pill');
+      if (!pill) return;
+      const sorted = Array.from(userTaste.entries())
+        .filter(([, w]) => w > 1)
+        .sort((a, b) => b[1] - a[1]);
+      
+      const topTag = sorted.length > 0 ? sorted[0][0] : 'ForYou';
+      const formatted = topTag.charAt(0).toUpperCase() + topTag.slice(1);
+      pill.textContent = `⚡ #${formatted}`;
+      pill.classList.remove('pulse');
+      void pill.offsetWidth;
+      pill.classList.add('pulse');
+    }
+
+    // Telemetry Batch Sender (with sendBeacon Blob wrapper for page unloads)
+    function flushTelemetry(useBeacon = false) {
+      if (telemetryQueue.length === 0) return;
+      const eventsToSend = [...telemetryQueue];
+      telemetryQueue = [];
+
+      const payload = JSON.stringify({ events: eventsToSend });
+      if (useBeacon && navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: 'application/json' });
+        navigator.sendBeacon('/api/reels/telemetry', blob);
+      } else {
+        fetch('/api/reels/telemetry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload
+        }).catch(() => {});
+      }
+    }
+
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        flushTelemetry(true);
+        saveTasteProfile();
+      }
+    });
+    window.addEventListener('pagehide', () => flushTelemetry(true));
+
+    // 3. Engine State
+    let activeSource = 'trending';
+    let currentPage = 1;
+    let isLoading = false;
+    let hasMore = true;
+    let isMuted = true;
+    let isFitContain = false;
+    let reelsData = [];
+    let activeIndex = 0;
+    let lastTapTime = 0;
+    let singleTapTimer = null;
+    let totalReelsCount = 12764;
+    const seenIds = new Set(recentSeenQueue);
+    const savedReels = new Map();
+
+    try {
+      const rawSaved = JSON.parse(localStorage.getItem('fiziiii_saved_v1') || '[]');
+      rawSaved.forEach(item => savedReels.set(item.id, item));
+    } catch (e) {}
+
+    const reelsContainer = document.getElementById('reels-container');
+    const counterBadge = document.getElementById('reel-counter-badge');
+    const segmentIndicator = document.getElementById('segment-indicator');
+    const toastEl = document.getElementById('ios-toast');
+    const toastText = document.getElementById('ios-toast-text');
+
+    function showToast(msg) {
+      toastText.textContent = msg;
+      toastEl.classList.add('show');
+      clearTimeout(toastEl._timer);
+      toastEl._timer = setTimeout(() => toastEl.classList.remove('show'), 2200);
+    }
+
+    function formatTime(secs) {
+      if (!secs || isNaN(secs)) return '0:00';
+      const s = Math.max(0, Math.floor(secs));
+      const m = Math.floor(s / 60);
+      const rem = s % 60;
+      return `${m}:${rem < 10 ? '0' : ''}${rem}`;
+    }
+
+    // 4. Setup Top Segmented Control
+    function setupSegmentedControl() {
+      const buttons = document.querySelectorAll('.segment-btn');
+      buttons.forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const source = btn.dataset.source;
+          const idx = parseInt(btn.dataset.idx, 10);
+          if (source === activeSource) return;
+
+          triggerHaptic('selection');
+          buttons.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          if (segmentIndicator) {
+            segmentIndicator.style.transform = `translateX(${idx * 100}%)`;
+          }
+
+          activeSource = source;
+          currentPage = 1;
+          hasMore = true;
+          reelsData = [];
+          seenIds.clear();
+          reelsContainer.innerHTML = '';
+          await loadReels(true);
+        });
+      });
+    }
+
+    // 5. Intelligent Slot-Machine Feed Ingestion (POST /api/reels/feed)
+    async function loadReels(isReset = false) {
+      if (isLoading || !hasMore) return;
+      isLoading = true;
+
+      // Extract positive topTags and negative dislikedTags from learned taste
+      const topTagsObj = {};
+      const dislikedList = [];
+      for (const [tag, weight] of userTaste.entries()) {
+        if (weight > 0) topTagsObj[tag] = weight;
+        else if (weight < -2) dislikedList.push(tag);
+      }
+
+      let loadedBatch = [];
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        const res = await fetch('/api/reels/feed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source: activeSource,
+            limit: 20,
+            desiRatio: tasteState.desiRatio,
+            topTags: topTagsObj,
+            dislikedTags: dislikedList,
+            recentSeenIds: recentSeenQueue.slice(-250),
+            sessionSeed: Date.now()
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.ok && Array.isArray(data.reels) && data.reels.length > 0) {
+            hasMore = data.hasMore;
+            if (data.total) totalReelsCount = data.total;
+            loadedBatch = data.reels;
+          }
+        }
+      } catch (err) {
+        console.warn('[Reels Feed] API error, using legacy fallback:', err.message);
+      }
+
+      currentPage++;
+
+      loadedBatch.forEach(reel => {
+        if (!reel || seenIds.has(reel.id)) return;
+        seenIds.add(reel.id);
+        recentSeenQueue.push(reel.id);
+        if (recentSeenQueue.length > 300) recentSeenQueue.shift();
+
+        const idx = reelsData.length;
+        reelsData.push(reel);
+        renderReelSlide(reel, idx);
+      });
+
+      setupIntersectionObserver();
+      updateCounterBadge(activeIndex);
+      updateVaultBadge();
+      updateTopTastePill();
+
+      if (isReset && reelsData.length > 0) {
+        setTimeout(() => playReelAtIndex(0), 60);
+      }
+      isLoading = false;
+    }
+
+    // 6. Render Individual Reel Slide with Zero-Flash Hardware Guard
+    function renderReelSlide(reel, index) {
+      const slide = document.createElement('div');
+      slide.className = 'reel-item';
+      slide.dataset.index = index;
+
+      const isSaved = savedReels.has(reel.id);
+      const formattedLikes = typeof reel.likes === 'number' && reel.likes >= 1000
+        ? (reel.likes / 1000).toFixed(1) + 'K'
+        : (reel.likes || '2.4K');
+
+      slide.innerHTML = `
+        <div class="reel-vignette-top"></div>
+        <div class="reel-vignette-bottom"></div>
+
+        <video
+          class="reel-media reel-video ${isFitContain ? 'fit-contain' : ''}"
+          data-src="${reel.streamUrl}"
+          poster="${reel.poster || reel.thumb || ''}"
+          playsinline
+          webkit-playsinline
+          loop
+          preload="none"
+          referrerpolicy="no-referrer"
+          ${isMuted ? 'muted' : ''}
+        ></video>
+
+        <div class="reel-spinner" id="spinner-${index}"></div>
+
+        <!-- Center Play/Pause Glass Indicator -->
+        <div class="play-pause-indicator apple-glass" id="play-pause-${index}">
+          <svg class="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        </div>
+
+        <!-- Right Vertical Action Bar -->
+        <div class="reel-actions">
+          <button class="action-btn like-btn" data-index="${index}" aria-label="Like">
+            <div class="action-circle apple-glass">
+              <svg class="w-5 h-5 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z"/>
+              </svg>
+            </div>
+            <span class="action-label like-count" data-raw="${reel.likes || 2400}">${formattedLikes}</span>
+          </button>
+
+          <button class="action-btn save-btn ${isSaved ? 'saved' : ''}" data-index="${index}" aria-label="Bookmark">
+            <div class="action-circle apple-glass">
+              <svg class="w-5 h-5" fill="${isSaved ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z"/>
+              </svg>
+            </div>
+            <span class="action-label">${isSaved ? 'Saved' : 'Save'}</span>
+          </button>
+
+          <button class="action-btn sound-btn" data-index="${index}" aria-label="Toggle Audio">
+            <div class="action-circle apple-glass sound-circle-icon">
+              ${getSoundSvg(isMuted)}
+            </div>
+            <span class="action-label sound-label-text">${isMuted ? 'Muted' : 'Audio'}</span>
+          </button>
+
+          <button class="action-btn fit-btn" data-index="${index}" aria-label="Toggle Aspect Fit">
+            <div class="action-circle apple-glass">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"/>
+              </svg>
+            </div>
+            <span class="action-label fit-label-text">${isFitContain ? 'Fit' : 'Fill'}</span>
+          </button>
+
+          <button class="action-btn share-btn" data-index="${index}" aria-label="Share">
+            <div class="action-circle apple-glass">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15m0-3-3-3m0 0-3 3m3-3V15"/>
+              </svg>
+            </div>
+            <span class="action-label">Share</span>
+          </button>
+        </div>
+
+        <!-- Bottom Metadata Details -->
+        <div class="reel-meta">
+          <div class="meta-author-row">
+            <span class="meta-author">${reel.author || '@Creator'}</span>
+            <span class="verified-badge" title="Verified Stream">
+              <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"/></svg>
+            </span>
+            <span class="meta-channel-tag">${reel.source || 'reel'}</span>
+          </div>
+
+          <p class="meta-title" title="Tap to expand">${reel.title || 'Exclusive vertical stream'}</p>
+
+          <div class="meta-audio-pill">
+            <div class="flex items-end gap-0.5 h-3 text-white/80">
+              <span class="audio-bar"></span>
+              <span class="audio-bar"></span>
+              <span class="audio-bar"></span>
+            </div>
+            <span class="truncate">Original Spatial Audio • ${reel.views || '320k'} views</span>
+          </div>
+        </div>
+
+        <!-- Interactive Scrubber Bar -->
+        <div class="scrubber-container" id="scrubber-${index}">
+          <div class="scrub-time-hud apple-glass" id="scrub-hud-${index}">0:00 / 0:30</div>
+          <div class="scrubber-track">
+            <div class="scrubber-fill" id="scrub-fill-${index}">
+              <div class="scrubber-thumb"></div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Event Listeners
+      const titleEl = slide.querySelector('.meta-title');
+      titleEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        triggerHaptic('selection');
+        titleEl.classList.toggle('expanded');
+      });
+
+      const likeBtn = slide.querySelector('.like-btn');
+      likeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleLikeState(likeBtn, reel);
+      });
+
+      const saveBtn = slide.querySelector('.save-btn');
+      saveBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleSaveReel(reel, saveBtn);
+      });
+
+      const soundBtn = slide.querySelector('.sound-btn');
+      soundBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleGlobalSound();
+      });
+
+      const fitBtn = slide.querySelector('.fit-btn');
+      fitBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleAspectRatioFit();
+      });
+
+      const shareBtn = slide.querySelector('.share-btn');
+      shareBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        triggerHaptic('light');
+        if (navigator.share) {
+          navigator.share({ title: reel.title, url: window.location.href }).catch(() => {});
+        } else {
+          showToast('Stream link copied to clipboard');
+        }
+      });
+
+      slide.addEventListener('click', (e) => {
+        if (e.target.closest('.reel-actions') || e.target.closest('.reels-header') || e.target.closest('.scrubber-container') || e.target.closest('.meta-title')) {
+          return;
+        }
+        const now = Date.now();
+        const diff = now - lastTapTime;
+        lastTapTime = now;
+
+        if (diff < 280 && diff > 0) {
+          clearTimeout(singleTapTimer);
+          spawnCoordinateHeart(e, slide);
+          if (!likeBtn.classList.contains('liked')) {
+            toggleLikeState(likeBtn, reel);
+          }
+        } else {
+          singleTapTimer = setTimeout(() => {
+            toggleSlidePlayPause(slide, index);
+          }, 260);
+        }
+      });
+
+      initRealVideoStream(slide, reel, index);
+      reelsContainer.appendChild(slide);
+    }
+
+    function getSoundSvg(muted) {
+      if (muted) {
+        return `<svg class="w-5 h-5 text-white/75" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.25 9.75 19.5 12m0 0 2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6 4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z"/></svg>`;
+      }
+      return `<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25l4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z"/></svg>`;
+    }
+
+    // 7. Video Stream Setup & Zero-Flash Poster Logic
+    function initRealVideoStream(slide, reel, index) {
+      const video = slide.querySelector('.reel-video');
+      
+      const spinner = slide.querySelector(`#spinner-${index}`);
+      const fillEl = slide.querySelector(`#scrub-fill-${index}`);
+      const hudEl = slide.querySelector(`#scrub-hud-${index}`);
+      const scrubber = slide.querySelector(`#scrubber-${index}`);
+
+      video._loopCount = 0;
+      video._userScrubbed = false;
+
+      let stallWatchdog = null;
+      const hideSpinner = () => {
+        if (stallWatchdog) { clearTimeout(stallWatchdog); stallWatchdog = null; }
+        spinner.style.display = 'none';
+      };
+
+      video.addEventListener('waiting', () => {
+        spinner.style.display = 'block';
+        clearTimeout(stallWatchdog);
+        stallWatchdog = setTimeout(() => {
+          hideSpinner();
+          if (index === activeIndex) scrollReel(1);
+        }, 3500);
+      });
+
+      // Zero-Flash Poster Guard: Fade out ONLY when playing starts!
+      video.addEventListener('playing', () => {
+        hideSpinner();
+        
+      });
+
+      video.addEventListener('canplay', hideSpinner);
+      video.addEventListener('loadeddata', hideSpinner);
+
+      video.addEventListener('timeupdate', () => {
+        if (!video.duration) return;
+        const pct = (video.currentTime / video.duration) * 100;
+        fillEl.style.width = `${pct}%`;
+        hudEl.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+      });
+
+      video.addEventListener('ended', () => {
+        video._loopCount = (video._loopCount || 0) + 1;
+      });
+
+      // Interactive Scrubbing
+      const seekFromEvent = (e) => {
+        video._userScrubbed = true;
+        const rect = scrubber.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        if (video.duration) {
+          video.currentTime = ratio * video.duration;
+          fillEl.style.width = `${ratio * 100}%`;
+          hudEl.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+        }
+      };
+
+      scrubber.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        scrubber.classList.add('scrubbing');
+        triggerHaptic('selection');
+        seekFromEvent(e);
+        const onMove = (ev) => seekFromEvent(ev);
+        const onUp = () => {
+          scrubber.classList.remove('scrubbing');
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+      });
+    }
+
+    // 8. Dwell Velocity Scoring & Pre-Warming Virtualization
+    function playReelAtIndex(idx) {
+      const prevIdx = activeIndex;
+      const prevSlide = document.querySelector(`.reel-item[data-index="${prevIdx}"]`);
+      const prevReel = reelsData[prevIdx];
+
+      // Dwell Velocity calculation on previous video swipe
+      if (prevSlide && prevReel && prevIdx !== idx) {
+        const dwellSec = (Date.now() - slideStartTime) / 1000;
+        const prevVideo = prevSlide.querySelector('.reel-video');
+        const loops = prevVideo ? (prevVideo._loopCount || 0) : 0;
+        const liked = prevSlide.querySelector('.like-btn')?.classList.contains('liked') ? 1 : 0;
+        const saved = prevSlide.querySelector('.save-btn')?.classList.contains('saved') ? 1 : 0;
+        const scrubbed = prevVideo?._userScrubbed ? 1 : 0;
+        const quickSkip = dwellSec < 1.8 ? 1 : 0;
+
+        // Dwell Velocity Math:
+        const scoreDelta = (2 * Math.log(1 + dwellSec)) + (4 * loops) + (6 * liked) + (8 * saved) + (3 * scrubbed) - (5 * quickSkip);
+
+        // Update taste profile
+        (prevReel.tags || []).forEach(t => {
+          const old = userTaste.get(t) || 0;
+          userTaste.set(t, +(old + scoreDelta).toFixed(2));
+        });
+
+        // Adapt Desi vs English ratio tilt
+        updateSourceAffinity(prevReel.source, scoreDelta);
+
+        // Exponential decay every 5 swipes
+        swipeCount++;
+        if (swipeCount % 5 === 0) {
+          for (const [k, v] of userTaste.entries()) {
+            userTaste.set(k, +(v * 0.92).toFixed(2));
+          }
+          saveTasteProfile();
+          updateTopTastePill();
+        }
+
+        // Telemetry Queue
+        let action = null;
+        if (liked) action = 'like';
+        else if (saved) action = 'save';
+        else if (loops > 0) action = 'loop';
+        else if (dwellSec >= 15) action = 'watch15s';
+        else if (quickSkip) action = 'skip';
+
+        if (action) {
+          telemetryQueue.push({ id: prevReel.id, action });
+          if (telemetryQueue.length >= 5) flushTelemetry();
+        }
+      }
+
+      slideStartTime = Date.now();
+      activeIndex = idx;
+      updateCounterBadge(idx);
+
+      const items = document.querySelectorAll('.reel-item');
+      items.forEach((slide, i) => {
+        const video = slide.querySelector('.reel-video');
+        
+        if (!video) return;
+
+        const diff = i - idx;
+
+        // Sliding Window: keep previous 1, active, and next 2 attached
+        if (diff >= -1 && diff <= 2) {
+          if (!video.src || video.src === '' || video.src === window.location.href) {
+            if (video.dataset.src) {
+              video.src = video.dataset.src;
+              video.load();
+            }
+          }
+
+          if (diff === 0) {
+            // Active reel: Play immediately
+            video.preload = 'auto';
+            video.muted = isMuted;
+            const playPromise = video.play();
+            if (playPromise !== undefined) {
+              playPromise.catch(err => {
+                if (err.name === 'NotAllowedError') {
+                  video.muted = true;
+                  isMuted = true;
+                  syncAllSoundIcons();
+                  video.play().catch(() => {});
+                }
+              });
+            }
+          } else if (diff === 1) {
+            // Next reel: Pre-Warm Hardware Decoder to Frame 1 (currentTime = 0.01)
+            video.pause();
+            video.preload = 'auto';
+            if (video.dataset.src && !video.dataset.prewarmed) {
+              const onWarm = () => {
+                video.removeEventListener('loadeddata', onWarm);
+                try {
+                  video.currentTime = 0.01;
+                  video.dataset.prewarmed = '1';
+                } catch(e) {}
+              };
+              video.addEventListener('loadeddata', onWarm);
+            }
+          } else {
+            video.pause();
+            video.preload = 'auto';
+          }
+        } else {
+          // Outside window: Unload src to free network sockets & phone RAM
+          video.pause();
+          if (video.src && video.src !== '') {
+            video.removeAttribute('src');
+            delete video.dataset.prewarmed;
+            video.load();
+            
+          }
+          video.preload = 'none';
+        }
+      });
+
+      if (idx >= reelsData.length - 4 && !isLoading && hasMore) {
+        loadReels();
+      }
+    }
+
+    // 9. Play / Pause Toggle with Center Glass Indicator
+    function toggleSlidePlayPause(slide, index) {
+      triggerHaptic('light');
+      const indicator = slide.querySelector(`#play-pause-${index}`);
+      const video = slide.querySelector('.reel-video');
+
+      if (!video) return;
+      if (video.paused) {
+        video.play().catch(() => {});
+        showCenterIndicator(indicator, true);
+      } else {
+        video.pause();
+        showCenterIndicator(indicator, false);
+      }
+    }
+
+    function showCenterIndicator(el, isPlaying) {
+      if (!el) return;
+      el.innerHTML = isPlaying
+        ? `<svg class="w-7 h-7 translate-x-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>`
+        : `<svg class="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
+      el.classList.add('show');
+      clearTimeout(el._hideTimer);
+      el._hideTimer = setTimeout(() => el.classList.remove('show'), 480);
+    }
+
+    // 10. Coordinate-Aware Double-Tap SVG Heart Burst
+    function spawnCoordinateHeart(e, slide) {
+      triggerHaptic('medium');
+      const rect = slide.getBoundingClientRect();
+      const x = (e.clientX || rect.left + rect.width / 2) - rect.left;
+      const y = (e.clientY || rect.top + rect.height / 2) - rect.top;
+      const randomTilt = (Math.random() * 24 - 12).toFixed(1) + 'deg';
+
+      const heart = document.createElement('div');
+      heart.className = 'coord-heart-burst';
+      heart.style.left = `${x}px`;
+      heart.style.top = `${y}px`;
+      heart.style.setProperty('--rot', randomTilt);
+      heart.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="#FF375F" class="w-full h-full">
+          <path d="m11.645 20.91-.007-.003-.022-.012a15.247 15.247 0 0 1-.383-.218 25.18 25.18 0 0 1-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0 1 12 5.052 5.5 5.5 0 0 1 16.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 0 1-4.244 3.17 15.247 15.247 0 0 1-.383.219l-.022.012-.007.004-.003.001a.752.752 0 0 1-.704 0l-.003-.001Z"/>
+        </svg>
+      `;
+      slide.appendChild(heart);
+      setTimeout(() => heart.remove(), 840);
+    }
+
+    // 11. Actions & Saved Vault
+    function toggleLikeState(btn, reel) {
+      triggerHaptic('medium');
+      const isLiked = btn.classList.toggle('liked');
+      const svg = btn.querySelector('svg');
+      const countEl = btn.querySelector('.like-count');
+      let raw = parseInt(countEl.dataset.raw, 10) || 2400;
+      raw = isLiked ? raw + 1 : raw - 1;
+      countEl.dataset.raw = raw;
+      countEl.textContent = raw >= 1000 ? (raw / 1000).toFixed(1) + 'K' : raw;
+      svg.setAttribute('fill', isLiked ? 'currentColor' : 'none');
+      svg.style.transform = 'scale(1.25)';
+      setTimeout(() => svg.style.transform = 'scale(1)', 200);
+
+      if (isLiked && reel && reel.id) {
+        telemetryQueue.push({ id: reel.id, action: 'like' });
+      }
+    }
+
+    function toggleSaveReel(reel, btn) {
+      triggerHaptic('success');
+      const isSaved = btn.classList.toggle('saved');
+      const svg = btn.querySelector('svg');
+      const label = btn.querySelector('.action-label');
+
+      if (isSaved) {
+        savedReels.set(reel.id, reel);
+        svg.setAttribute('fill', 'currentColor');
+        label.textContent = 'Saved';
+        showToast('Saved to collection');
+        telemetryQueue.push({ id: reel.id, action: 'save' });
+      } else {
+        savedReels.delete(reel.id);
+        svg.setAttribute('fill', 'none');
+        label.textContent = 'Save';
+      }
+      try {
+        localStorage.setItem('fiziiii_saved_v1', JSON.stringify(Array.from(savedReels.values())));
+      } catch (e) {}
+      updateVaultBadge();
+    }
+
+    function updateVaultBadge() {
+      const badge = document.getElementById('vault-count-badge');
+      if (!badge) return;
+      if (savedReels.size > 0) {
+        badge.textContent = savedReels.size;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
+
+    function toggleGlobalSound() {
+      triggerHaptic('light');
+      isMuted = !isMuted;
+      syncAllSoundIcons();
+      const activeSlide = document.querySelector(`.reel-item[data-index="${activeIndex}"]`);
+      if (activeSlide) {
+        const v = activeSlide.querySelector('.reel-video');
+        if (v) v.muted = isMuted;
+      }
+      showToast(isMuted ? 'Audio Muted' : 'Spatial Audio Unmuted');
+    }
+
+    function syncAllSoundIcons() {
+      document.querySelectorAll('.sound-circle-icon').forEach(el => {
+        el.innerHTML = getSoundSvg(isMuted);
+      });
+      document.querySelectorAll('.sound-label-text').forEach(el => {
+        el.textContent = isMuted ? 'Muted' : 'Audio';
+      });
+    }
+
+    function toggleAspectRatioFit() {
+      triggerHaptic('light');
+      isFitContain = !isFitContain;
+      document.querySelectorAll('.reel-media').forEach(el => {
+        el.classList.toggle('fit-contain', isFitContain);
+      });
+      document.querySelectorAll('.fit-label-text').forEach(el => {
+        el.textContent = isFitContain ? 'Fit' : 'Fill';
+      });
+      showToast(isFitContain ? 'Aspect Ratio: Original Fit' : 'Aspect Ratio: 9:16 Fullscreen');
+    }
+
+    function updateCounterBadge(idx) {
+      if (counterBadge) {
+        counterBadge.textContent = `${idx + 1} / ${totalReelsCount.toLocaleString()}`;
+      }
+    }
+
+    // 12. IntersectionObserver for Smooth Snap
+    let observer = null;
+    function setupIntersectionObserver() {
+      if (observer) observer.disconnect();
+      observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.55) {
+            const idx = parseInt(entry.target.dataset.index, 10);
+            if (idx !== activeIndex) {
+              triggerHaptic('selection');
+              playReelAtIndex(idx);
+            }
+          }
+        });
+      }, {
+        root: reelsContainer,
+        threshold: 0.55
+      });
+      document.querySelectorAll('.reel-item').forEach(item => observer.observe(item));
+    }
+
+    // 13. Navigation & Vault Drawers
+    function scrollReel(direction) {
+      const targetIdx = activeIndex + direction;
+      const items = document.querySelectorAll('.reel-item');
+      if (targetIdx >= 0 && targetIdx < items.length) {
+        items[targetIdx].scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+
+    function setupNavigationAndDrawers() {
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown' || e.key === 'j') scrollReel(1);
+        else if (e.key === 'ArrowUp' || e.key === 'k') scrollReel(-1);
+        else if (e.key === ' ') {
+          e.preventDefault();
+          const items = document.querySelectorAll('.reel-item');
+          if (items[activeIndex]) toggleSlidePlayPause(items[activeIndex], activeIndex);
+        } else if (e.key === 'm') {
+          toggleGlobalSound();
+        }
+      });
+
+      document.getElementById('desktop-prev')?.addEventListener('click', () => scrollReel(-1));
+      document.getElementById('desktop-next')?.addEventListener('click', () => scrollReel(1));
+
+      const vaultSheet = document.getElementById('vault-sheet');
+      const vaultBackdrop = document.getElementById('vault-backdrop');
+      const vaultList = document.getElementById('vault-list');
+
+      const openVault = () => {
+        triggerHaptic('light');
+        vaultList.innerHTML = '';
+        if (savedReels.size === 0) {
+          vaultList.innerHTML = `<div class="col-span-2 py-10 text-center text-xs text-white/45">No saved reels yet. Tap the bookmark icon on any reel to save it to your private vault.</div>`;
+        } else {
+          Array.from(savedReels.values()).forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'p-3 rounded-2xl bg-white/5 border border-white/10 flex flex-col justify-between gap-2 cursor-pointer hover:bg-white/10 transition';
+            card.innerHTML = `
+              <div class="flex items-center justify-between text-[10px] text-white/50">
+                <span class="uppercase font-bold text-white/80">${item.source}</span>
+                <span>${item.views || '240k'}</span>
+              </div>
+              <p class="text-xs font-medium text-white line-clamp-2">${item.title}</p>
+              <span class="text-[11px] text-sky-400 font-semibold">${item.author}</span>
+            `;
+            vaultList.appendChild(card);
+          });
+        }
+        vaultBackdrop.classList.add('open');
+        vaultSheet.classList.add('open');
+      };
+
+      const closeVault = () => {
+        vaultBackdrop.classList.remove('open');
+        vaultSheet.classList.remove('open');
+      };
+
+      document.getElementById('open-vault-btn')?.addEventListener('click', openVault);
+      document.getElementById('close-vault-btn')?.addEventListener('click', closeVault);
+      vaultBackdrop?.addEventListener('click', closeVault);
+    }
+
+    // Boot Engine
+    document.addEventListener('DOMContentLoaded', () => {
+      setupSegmentedControl();
+      setupNavigationAndDrawers();
+      loadReels(true);
+    });
+  </script>
+</body>
+</html>
